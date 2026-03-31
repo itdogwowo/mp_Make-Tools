@@ -1,0 +1,26 @@
+{
+  "micropython": {
+    "dir": "lib/micropython",
+    "url": "https://github.com/micropython/micropython",
+    "ref": null
+  },
+  "esp_idf": {
+    "dir": "lib/esp-idf",
+    "url": "https://github.com/espressif/esp-idf",
+    "version": "v5.5.1",
+    "chips": "esp32"
+  },
+  "build": {
+    "dir": "build",
+    "jobs": null,
+    "user_c_modules": null,
+    "strict": false
+  },
+  "exmod": {
+    "root": "ext_mod",
+    "list": [
+      "/lcd_bus/micropython.cmake",
+      "/lcd_utils/micropython.cmake"
+    ]
+  }
+}
