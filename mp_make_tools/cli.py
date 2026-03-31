@@ -1,10 +1,46 @@
 from __future__ import annotations
 
+import glob
 import os
+import re
 import shlex
 import shutil
 import sys
+from datetime import datetime
 from argparse import ArgumentParser
+
+
+def _safe_output_stem(name: str) -> str:
+    name = (name or '').strip()
+    if not name:
+        return 'firmware'
+    return re.sub(r'[^A-Za-z0-9._-]+', '_', name)
+
+
+def _find_esp32_firmware_bin(port_dir: str) -> str | None:
+    candidates: list[str] = []
+    candidates.extend(glob.glob(os.path.join(port_dir, 'build*', 'firmware.bin')))
+    candidates.extend(glob.glob(os.path.join(port_dir, 'build*', '**', 'firmware.bin'), recursive=True))
+    uniq = list(dict.fromkeys(candidates))
+    if not uniq:
+        return None
+    return max(uniq, key=lambda p: os.path.getmtime(p))
+
+
+def _unique_path(path: str) -> str:
+    if not os.path.exists(path):
+        return path
+    root, ext = os.path.splitext(path)
+    ts = datetime.now().strftime('%Y_%m_%d_%H_%M_%S')
+    candidate = f'{root}_{ts}{ext}'
+    if not os.path.exists(candidate):
+        return candidate
+    i = 1
+    while True:
+        candidate = f'{root}_{ts}_{i}{ext}'
+        if not os.path.exists(candidate):
+            return candidate
+        i += 1
 
 
 def _default_project_dir() -> str:
@@ -167,6 +203,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument('--sync', dest='sync', default=False, action='store_true')
     parser.add_argument('--idf-install', dest='idf_install', default=False, action='store_true')
     parser.add_argument('--idf-export', dest='idf_export', default=False, action='store_true')
+    parser.add_argument('--no-idf-export', dest='no_idf_export', default=False, action='store_true')
     parser.add_argument('--build-dir', dest='build_dir', default=None, action='store')
     parser.add_argument('--strict-config', dest='strict_config', default=False, action='store_true')
 
@@ -175,6 +212,8 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument('--install', dest='install', default=False, action='store_true')
     parser.add_argument('--no-doctor', dest='no_doctor', default=False, action='store_true')
     parser.add_argument('--clean', dest='clean', default=False, action='store_true')
+    parser.add_argument('--no-clean', dest='no_clean', default=False, action='store_true')
+    parser.add_argument('--name', dest='name', default=None, action='store')
 
     parser.add_argument('--include-manifest', dest='include_manifests', action='append', default=[])
     parser.add_argument('--freeze-file', dest='freeze_files', action='append', default=[])
@@ -321,7 +360,7 @@ def main(argv: list[str] | None = None) -> int:
         raise RuntimeError(f'Unknown target or missing port directory: {port_dir}')
 
     if not args.no_doctor:
-        rc = doctor(target, install=False)
+        rc = doctor(target, install=bool(args.install))
         if rc != 0:
             return rc
 
@@ -329,43 +368,80 @@ def main(argv: list[str] | None = None) -> int:
         raise RuntimeError('Building firmware on Windows is not supported by this tool. Use --manifest-only.')
 
     env = os.environ.copy()
-    if target.lower() == 'esp32' and os.path.exists(esp_idf_dir):
+    is_esp32 = target.lower() == 'esp32'
+    export_sh = os.path.join(esp_idf_dir, 'export.sh')
+
+    if is_esp32 and os.path.exists(esp_idf_dir):
         env['IDF_PATH'] = esp_idf_dir
 
-    if target.lower() == 'esp32' and args.idf_export and os.path.exists(esp_idf_dir):
+    if is_esp32 and not args.no_idf_export and os.path.exists(export_sh) and shutil.which('bash') is None:
+        raise RuntimeError('bash is required for ESP32 builds (to source ESP-IDF export.sh).')
+
+    if is_esp32 and not args.no_idf_export and os.path.exists(esp_idf_dir) and os.path.exists(export_sh):
         _ensure_esp_idf_tools(esp_idf_dir, chips=esp_idf_chips, cwd=project_dir, env=env)
 
     _ensure_mpy_cross(micropython_dir, jobs=jobs, cwd=project_dir, env=env)
 
-    cmd = [
+    make_base = [
         'make',
         f'-j{jobs}',
         '-C',
         port_dir,
     ]
 
-    if args.clean:
-        cmd.append('clean')
-
-    cmd.append(f'FROZEN_MANIFEST={out_manifest}')
+    make_args: list[str] = []
+    make_args.append(f'FROZEN_MANIFEST={out_manifest}')
 
     user_c_modules = args.user_c_modules or cfg.user_c_modules
     if not user_c_modules and exmods_resolved:
         user_c_modules = _user_c_modules_value(exmods_resolved)
     if user_c_modules:
-        cmd.append(f'USER_C_MODULES={os.path.abspath(user_c_modules)}')
+        make_args.append(f'USER_C_MODULES={os.path.abspath(user_c_modules)}')
 
-    cmd.extend(passthrough)
+    make_args.extend(passthrough)
 
     if (args.idf_install or args.idf_export) and shutil.which('bash') is None:
         raise RuntimeError('bash is required for --idf-install/--idf-export')
 
-    if target.lower() == 'esp32' and os.path.exists(esp_idf_dir) and os.path.exists(os.path.join(esp_idf_dir, 'install.sh')) and args.idf_install:
+    if is_esp32 and os.path.exists(esp_idf_dir) and os.path.exists(os.path.join(esp_idf_dir, 'install.sh')) and args.idf_install:
         run_bash(f'cd {shlex.quote(esp_idf_dir)} && ./install.sh {shlex.quote(esp_idf_chips)}', cwd=project_dir, env=env)
 
-    export_sh = os.path.join(esp_idf_dir, 'export.sh')
-    if target.lower() == 'esp32' and os.path.exists(export_sh) and args.idf_export:
-        make_cmd = ' '.join(shlex.quote(x) for x in cmd)
-        return run_bash(f'source {shlex.quote(export_sh)} >/dev/null 2>&1 && {make_cmd}', cwd=project_dir, env=env)
+    use_idf_export = is_esp32 and os.path.exists(export_sh) and (args.idf_export or (not args.no_idf_export))
+    should_clean = not bool(args.no_clean)
 
-    return run(cmd, cwd=project_dir, env=env)
+    if should_clean:
+        clean_cmd = make_base + make_args + ['clean']
+        if use_idf_export:
+            clean_cmd_s = ' '.join(shlex.quote(x) for x in clean_cmd)
+            rc = run_bash(
+                f'source {shlex.quote(export_sh)} >/dev/null 2>&1 && {clean_cmd_s}',
+                cwd=project_dir,
+                env=env,
+            )
+        else:
+            rc = run(clean_cmd, cwd=project_dir, env=env)
+        if rc != 0:
+            return rc
+
+    build_cmd = make_base + make_args
+    if use_idf_export:
+        build_cmd_s = ' '.join(shlex.quote(x) for x in build_cmd)
+        rc = run_bash(
+            f'source {shlex.quote(export_sh)} >/dev/null 2>&1 && {build_cmd_s}',
+            cwd=project_dir,
+            env=env,
+        )
+    else:
+        rc = run(build_cmd, cwd=project_dir, env=env)
+
+    if rc == 0 and is_esp32:
+        src_bin = _find_esp32_firmware_bin(port_dir)
+        if src_bin is None:
+            print('WARN: build succeeded but firmware.bin was not found under the port build directory.')
+        else:
+            stem = _safe_output_stem(args.name or raw_target)
+            dst_bin = _unique_path(os.path.join(build_dir, f'{stem}.bin'))
+            shutil.copy2(src_bin, dst_bin)
+            print('Output: ' + dst_bin)
+
+    return rc

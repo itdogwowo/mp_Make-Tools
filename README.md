@@ -26,6 +26,8 @@ python3 /path/to/mp_Make-Tools/make.py unix
 python3 /path/to/mp_Make-Tools/make.py --project-dir /path/to/firmware unix
 ```
 
+如果不指定 `--project-dir`，預設會使用「目前工作目錄（cwd）」當作專案根目錄。
+
 指定 port 參數（全部原樣透傳給 MicroPython 的 make）：
 
 ```bash
@@ -120,10 +122,12 @@ ESP-IDF 版本建議（MicroPython 推薦）：`v5.5.1`（也支援 `v5.3`、`v5
 
 ESP32 建置通常需要先跑一次（只需一次）：`./install.sh esp32`，並在每個新 shell session 做：`source export.sh`。
 
-工具提供兩個選項：
+工具提供幾個選項：
 
 - `--idf-install`：在 `lib/esp-idf` 存在時，嘗試執行 `./install.sh <chips>`（chips 來源：`--esp-idf-chips` 或 `config.json` 的 `esp_idf.chips`）
-- `--idf-export`：編譯時自動 `source $IDF_PATH/export.sh` 再執行 `make ...`
+- （預設）ESP32 編譯時會自動 `source $IDF_PATH/export.sh` 再執行 `make ...`（避免 `idf.py: command not found`）
+- `--no-idf-export`：關閉上述行為（不建議，除非你已自行處理好 ESP-IDF 環境）
+- `--idf-export`：強制啟用上述行為（兼容舊用法）
 
 範例：
 
@@ -132,6 +136,12 @@ python3 /path/to/mp_Make-Tools/make.py --project-dir /path/to/firmware \
   --fetch --idf-install --idf-export \
   esp32 BOARD=ESP32_GENERIC
 ```
+
+## 建置前自動 clean
+
+為了確保建置乾淨，工具預設每次建置都會先執行一次 `make clean` 再開始編譯。
+
+- `--no-clean`：關閉自動 clean（不建議，除非你很確定需要加速增量編譯）
 
 ## 自動檢查/安裝提示（doctor）
 
@@ -147,10 +157,30 @@ python3 /path/to/mp_Make-Tools/make.py --project-dir /path/to/firmware --doctor 
 python3 /path/to/mp_Make-Tools/make.py --project-dir /path/to/firmware --doctor --install esp32
 ```
 
+在真正建置時也可以加上 `--install`，若偵測到缺少必要指令會嘗試自動安裝（需要特殊權限時會提示你該用什麼指令安裝）：
+
+```bash
+python3 /path/to/mp_Make-Tools/make.py --project-dir /path/to/firmware --install esp32 BOARD=ESP32_GENERIC
+```
+
 預設在真正編譯前會自動跑一次 doctor；若你想跳過：
 
 ```bash
 python3 /path/to/mp_Make-Tools/make.py --project-dir /path/to/firmware --no-doctor esp32 BOARD=ESP32_GENERIC
+```
+
+## 輸出韌體檔案（ESP32）
+
+ESP32 建置成功後，工具會自動把 `firmware.bin` 改名複製到你的專案 `build/` 目錄下：
+
+- 預設檔名：等同 `target` 參數（例如 `esp32s3` 會輸出 `build/esp32s3.bin`）
+- `--name <name>`：指定輸出檔名（優先於其他）
+ - 若檔名重複：自動加上 `_YYYY_MM_DD_HH_MM_SS` 避免覆蓋（例如 `esp32s3_2026_04_01_12_30_45.bin`）
+
+範例：
+
+```bash
+python3 /path/to/mp_Make-Tools/make.py --project-dir /path/to/firmware --name my_firmware esp32s3 BOARD=ESP32_GENERIC_S3
 ```
 
 ## Freeze 與額外 manifest

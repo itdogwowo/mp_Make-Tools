@@ -68,13 +68,15 @@ def doctor(target: str, *, install: bool) -> int:
                 lines.append('Install (Ubuntu/Debian):')
                 lines.append('sudo apt-get update')
                 lines.append('sudo apt-get install -y ' + ' '.join(req.apt))
-                if install:
+                if install and missing:
                     if os.geteuid() != 0:
-                        lines.append('ERROR: install requested but not running as root; re-run with sudo.')
+                        lines.append('ERROR: install requested but requires elevated privileges; re-run with sudo.')
                     else:
                         rc1 = run(['apt-get', 'update'])
                         rc2 = run(['apt-get', 'install', '-y', *req.apt])
-                        return 0 if (rc1 == 0 and rc2 == 0) else 1
+                        if rc1 != 0 or rc2 != 0:
+                            _print_lines(lines)
+                            return 1
 
     elif host == 'macos':
         if shutil.which('xcode-select') is not None:
@@ -89,8 +91,11 @@ def doctor(target: str, *, install: bool) -> int:
             lines.append('brew install ' + ' '.join(req.brew))
         if shutil.which('brew') is None:
             lines.append('Install: Homebrew not found; install brew first.')
-        elif install and req.brew:
-            return run(['brew', 'install', *req.brew])
+        elif install and missing and req.brew:
+            rc = run(['brew', 'install', *req.brew])
+            if rc != 0:
+                _print_lines(lines)
+                return 1
 
     elif host == 'windows':
         lines.append('Windows: compile is not supported by this tool (use --manifest-only).')
@@ -102,7 +107,15 @@ def doctor(target: str, *, install: bool) -> int:
 
     if req.name == 'esp32' and host in ('linux', 'macos'):
         lines.append('ESP-IDF quick setup:')
-        lines.append('- Use --fetch to download esp-idf, then --idf-install, and --idf-export when building.')
+        lines.append('- Use --fetch to download esp-idf, then --idf-install once (if needed).')
+        lines.append('- ESP32 builds will automatically source esp-idf/export.sh (use --no-idf-export to disable).')
+
+    if missing and install:
+        missing = _missing_binaries(req.binaries)
+        if missing:
+            lines.append('ERROR: missing commands remain after install attempt: ' + ', '.join(missing))
 
     _print_lines(lines)
-    return 0 if _python_ok(3, 10) else 1
+    if not _python_ok(3, 10):
+        return 1
+    return 0 if not missing else 1
