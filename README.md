@@ -32,6 +32,12 @@ python3 /path/to/mp_Make-Tools/make.py --project-dir /path/to/firmware unix
 python3 /path/to/mp_Make-Tools/make.py --project-dir /path/to/firmware esp32 BOARD=ESP32_GENERIC
 ```
 
+ESP32 也可以直接用 chip 當 target（會自動等同 `esp32` 並設定 `--esp-idf-chips`）：
+
+```bash
+python3 /path/to/mp_Make-Tools/make.py --project-dir /path/to/firmware esp32s3 BOARD=ESP32_GENERIC_S3
+```
+
 ## 只生成 manifest（不編譯）
 
 ```bash

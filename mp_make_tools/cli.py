@@ -1,15 +1,10 @@
+from __future__ import annotations
+
 import os
 import shlex
 import shutil
 import sys
 from argparse import ArgumentParser
-
-from .manifest import write_manifest
-from .proc import run, run_bash
-from .doctor import doctor
-from .fetch import ensure_repo_ref, ensure_submodule_or_clone
-from .config import load_config
-from .git_tools import is_head_at_ref
 
 
 def _default_project_dir() -> str:
@@ -82,7 +77,80 @@ def _check_config_mismatch(name: str, cfg_value, cli_value, *, strict: bool) -> 
     print('WARN: ' + msg)
 
 
+def _normalize_target_and_chips(target: str) -> tuple[str, str | None]:
+    t = target.lower()
+    if t.startswith('esp32') and t != 'esp32':
+        return 'esp32', t
+    return target, None
+
+
+def _is_within_dir(path: str, parent_dir: str) -> bool:
+    parent_dir = os.path.abspath(parent_dir)
+    path = os.path.abspath(path)
+    try:
+        return os.path.commonpath([path, parent_dir]) == parent_dir
+    except ValueError:
+        return False
+
+
+def _ensure_mpy_cross(micropython_dir: str, *, jobs: int, cwd: str, env: dict[str, str]) -> None:
+    from .proc import run as _run
+
+    mpy_cross_dir = os.path.join(micropython_dir, 'mpy-cross')
+    if not os.path.isdir(mpy_cross_dir):
+        return
+    rc_clean = _run(['make', '-C', mpy_cross_dir, 'clean'], cwd=cwd, env=env)
+    if rc_clean != 0:
+        raise RuntimeError('Failed to clean mpy-cross (host tool).')
+    cmd = [
+        'make',
+        f'-j{jobs}',
+        '-C',
+        mpy_cross_dir,
+    ]
+    rc = _run(cmd, cwd=cwd, env=env)
+    if rc != 0:
+        raise RuntimeError('Failed to build mpy-cross (host tool).')
+
+
+def _ensure_esp_idf_tools(esp_idf_dir: str, *, chips: str, cwd: str, env: dict[str, str]) -> None:
+    from .proc import run_bash as _run_bash
+
+    export_sh = os.path.join(esp_idf_dir, 'export.sh')
+    if not os.path.exists(export_sh):
+        return
+
+    check_cmd = f'source {shlex.quote(export_sh)} >/dev/null 2>&1 && command -v idf.py >/dev/null 2>&1'
+    if _run_bash(check_cmd, cwd=cwd, env=env) == 0:
+        return
+
+    install_sh = os.path.join(esp_idf_dir, 'install.sh')
+    if not os.path.exists(install_sh):
+        raise RuntimeError('idf.py not found after sourcing export.sh, and install.sh is missing.')
+
+    rc = _run_bash(
+        f'cd {shlex.quote(esp_idf_dir)} && ./install.sh {shlex.quote(chips)}',
+        cwd=cwd,
+        env=env,
+    )
+    if rc != 0:
+        raise RuntimeError('ESP-IDF tools installation failed (install.sh).')
+    if _run_bash(check_cmd, cwd=cwd, env=env) != 0:
+        raise RuntimeError('idf.py is still not available after install.sh.')
+
+
 def main(argv: list[str] | None = None) -> int:
+    if sys.version_info < (3, 10):
+        print(f'ERROR: Python >= 3.10 is required (found {sys.version.split()[0]}).')
+        return 1
+
+    from .config import load_config
+    from .doctor import doctor
+    from .fetch import ensure_repo_ref, ensure_submodule_or_clone
+    from .git_tools import is_head_at_ref
+    from .manifest import write_manifest
+    from .proc import run, run_bash
+
     argv = list(sys.argv[1:] if argv is None else argv)
 
     parser = ArgumentParser(prefix_chars='-')
@@ -121,6 +189,9 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument('target', nargs=1)
     args, passthrough = parser.parse_known_args(argv)
 
+    raw_target = args.target[0]
+    target, implied_chips = _normalize_target_and_chips(raw_target)
+
     project_dir = os.path.abspath(args.project_dir or _default_project_dir())
     cfg = load_config(project_dir, args.config)
     strict = bool(args.strict_config or (cfg.strict is True))
@@ -133,13 +204,11 @@ def main(argv: list[str] | None = None) -> int:
 
     esp_idf_url = args.esp_idf_url or cfg.esp_idf_url or 'https://github.com/espressif/esp-idf'
     esp_idf_version = args.esp_idf_version or cfg.esp_idf_version or 'v5.5.1'
-    esp_idf_chips = args.esp_idf_chips or cfg.esp_idf_chips or 'esp32'
+    esp_idf_chips = args.esp_idf_chips or cfg.esp_idf_chips or implied_chips or 'esp32'
 
     build_dir_name = args.build_dir or cfg.build_dir or 'build'
     build_dir = os.path.abspath(os.path.join(project_dir, build_dir_name))
     jobs = args.jobs if args.jobs is not None else (cfg.jobs or (os.cpu_count() or 1))
-    target = args.target[0]
-
     _check_config_mismatch('micropython.dir', cfg.micropython_dir, args.micropython_dir, strict=strict)
     _check_config_mismatch('micropython.url', cfg.micropython_url, args.micropython_url, strict=strict)
     _check_config_mismatch('micropython.ref', cfg.micropython_ref, args.micropython_ref, strict=strict)
@@ -157,7 +226,19 @@ def main(argv: list[str] | None = None) -> int:
     if args.doctor:
         return doctor(target, install=args.install)
 
-    if args.fetch or args.sync:
+    should_fetch = bool(args.fetch or args.sync)
+    if not should_fetch and not os.path.exists(micropython_dir):
+        if _is_within_dir(micropython_dir, project_dir):
+            should_fetch = True
+        else:
+            raise RuntimeError(f'MicroPython checkout not found at {micropython_dir}. Run with --fetch or set --micropython-dir.')
+    if target.lower() == 'esp32' and not should_fetch and not os.path.exists(esp_idf_dir):
+        if _is_within_dir(esp_idf_dir, project_dir):
+            should_fetch = True
+        else:
+            raise RuntimeError(f'ESP-IDF checkout not found at {esp_idf_dir}. Run with --fetch or set --esp-idf-dir.')
+
+    if should_fetch:
         if not os.path.exists(micropython_dir):
             micropython_dir = ensure_submodule_or_clone(
                 project_dir=project_dir,
@@ -182,6 +263,11 @@ def main(argv: list[str] | None = None) -> int:
             else:
                 ensure_repo_ref(esp_idf_dir, ref=esp_idf_version, recursive=True)
 
+    if os.path.exists(micropython_dir) and os.path.exists(os.path.join(micropython_dir, '.gitmodules')):
+        rc = run(['git', 'submodule', 'update', '--init', '--recursive'], cwd=micropython_dir, env=None)
+        if rc != 0:
+            raise RuntimeError('Failed to initialise MicroPython submodules.')
+
     if micropython_ref and os.path.exists(micropython_dir) and not is_head_at_ref(micropython_dir, micropython_ref):
         msg = f'MicroPython version mismatch: expected {micropython_ref} at {micropython_dir}'
         if strict:
@@ -194,16 +280,12 @@ def main(argv: list[str] | None = None) -> int:
             raise RuntimeError(msg)
         print('WARN: ' + msg)
 
-    port_dir = _port_dir(micropython_dir, target)
-    if not os.path.isdir(port_dir):
-        raise RuntimeError(f'Unknown target or missing port directory: {port_dir}')
-
     out_manifest = os.path.join(build_dir, 'manifest.py')
-    port_manifest = _port_manifest(micropython_dir, target)
-    if os.path.exists(port_manifest):
-        includes = [port_manifest]
-    else:
-        includes = []
+    includes: list[str] = []
+    if os.path.exists(micropython_dir):
+        port_manifest = _port_manifest(micropython_dir, target)
+        if os.path.exists(port_manifest):
+            includes.append(port_manifest)
 
     includes.extend([os.path.abspath(p) for p in args.include_manifests])
 
@@ -230,6 +312,14 @@ def main(argv: list[str] | None = None) -> int:
         print(out_manifest)
         return 0
 
+    port_dir = _port_dir(micropython_dir, target)
+    if not os.path.isdir(port_dir):
+        if not os.path.exists(micropython_dir):
+            raise RuntimeError(
+                f'MicroPython checkout not found at {micropython_dir}. Run with --fetch or set --micropython-dir.'
+            )
+        raise RuntimeError(f'Unknown target or missing port directory: {port_dir}')
+
     if not args.no_doctor:
         rc = doctor(target, install=False)
         if rc != 0:
@@ -241,6 +331,11 @@ def main(argv: list[str] | None = None) -> int:
     env = os.environ.copy()
     if target.lower() == 'esp32' and os.path.exists(esp_idf_dir):
         env['IDF_PATH'] = esp_idf_dir
+
+    if target.lower() == 'esp32' and args.idf_export and os.path.exists(esp_idf_dir):
+        _ensure_esp_idf_tools(esp_idf_dir, chips=esp_idf_chips, cwd=project_dir, env=env)
+
+    _ensure_mpy_cross(micropython_dir, jobs=jobs, cwd=project_dir, env=env)
 
     cmd = [
         'make',

@@ -84,14 +84,13 @@ def doctor(target: str, *, install: bool) -> int:
         else:
             lines.append('Install (macOS): xcode-select --install')
 
+        if req.brew:
+            lines.append('Install (macOS, brew):')
+            lines.append('brew install ' + ' '.join(req.brew))
         if shutil.which('brew') is None:
             lines.append('Install: Homebrew not found; install brew first.')
-        else:
-            if req.brew:
-                lines.append('Install (macOS, brew):')
-                lines.append('brew install ' + ' '.join(req.brew))
-                if install:
-                    return run(['brew', 'install', *req.brew])
+        elif install and req.brew:
+            return run(['brew', 'install', *req.brew])
 
     elif host == 'windows':
         lines.append('Windows: compile is not supported by this tool (use --manifest-only).')
