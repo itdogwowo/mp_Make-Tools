@@ -26,6 +26,120 @@ def _find_esp32_firmware_bin(port_dir: str) -> str | None:
         return None
     return max(uniq, key=lambda p: os.path.getmtime(p))
 
+def _find_esp32_micropython_bin(port_dir: str) -> str | None:
+    candidates: list[str] = []
+    candidates.extend(glob.glob(os.path.join(port_dir, 'build*', 'micropython.bin')))
+    candidates.extend(glob.glob(os.path.join(port_dir, 'build*', '**', 'micropython.bin'), recursive=True))
+    uniq = list(dict.fromkeys(candidates))
+    if not uniq:
+        return None
+    return max(uniq, key=lambda p: os.path.getmtime(p))
+
+def _extract_make_vars(args: list[str]) -> dict[str, str]:
+    out: dict[str, str] = {}
+    for a in args:
+        if not a or '=' not in a:
+            continue
+        k, v = a.split('=', 1)
+        k = k.strip()
+        if not k:
+            continue
+        out[k] = v
+    return out
+
+def _cmake_path(path: str) -> str:
+    return os.path.abspath(path).replace('\\', '/')
+
+def _append_sdkconfig_defaults(cmake_file: str, sdkconfig_file: str) -> None:
+    cmake_file = os.path.abspath(cmake_file)
+    sdkconfig_file = _cmake_path(sdkconfig_file)
+    line = f'set(SDKCONFIG_DEFAULTS ${{SDKCONFIG_DEFAULTS}} \"{sdkconfig_file}\")'
+
+    with open(cmake_file, 'r', encoding='utf-8') as f:
+        data = f.read()
+
+    if sdkconfig_file in data:
+        return
+
+    if not data.endswith('\n'):
+        data += '\n'
+    data += line + '\n'
+
+    with open(cmake_file, 'w', encoding='utf-8') as f:
+        f.write(data)
+
+def _write_esp32_sdkconfig_fragment(path: str, *, flash_mb: int, partitions_csv: str) -> None:
+    path = os.path.abspath(path)
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+
+    partitions_csv = partitions_csv.replace('\\', '/')
+    lines: list[str] = []
+    lines.append('CONFIG_PARTITION_TABLE_CUSTOM=y')
+    lines.append(f'CONFIG_PARTITION_TABLE_CUSTOM_FILENAME=\"{partitions_csv}\"')
+
+    for mb in (2, 4, 8, 16, 32, 64, 128):
+        val = 'y' if mb == flash_mb else 'n'
+        lines.append(f'CONFIG_ESPTOOLPY_FLASHSIZE_{mb}MB={val}')
+
+    with open(path, 'w', encoding='utf-8') as f:
+        f.write('\n'.join(lines) + '\n')
+
+def _prepare_esp32_partition_auto(
+    *,
+    project_dir: str,
+    port_dir: str,
+    build_dir: str,
+    passthrough: list[str],
+    flash_mb: int,
+) -> tuple[list[str], str, str]:
+    mv = _extract_make_vars(passthrough)
+
+    board_variant = mv.get('BOARD_VARIANT') or ''
+    board_dir_arg = mv.get('BOARD_DIR')
+    board = mv.get('BOARD') or 'ESP32_GENERIC'
+
+    if board_dir_arg:
+        board_dir_src = board_dir_arg
+        if not os.path.isabs(board_dir_src):
+            board_dir_src = os.path.abspath(os.path.join(port_dir, board_dir_src))
+        board_name = os.path.basename(os.path.abspath(board_dir_src))
+    else:
+        board_name = board
+        board_dir_src = os.path.abspath(os.path.join(port_dir, 'boards', board_name))
+
+    if not os.path.isdir(board_dir_src):
+        raise RuntimeError(f'ESP32 board directory not found: {board_dir_src}')
+
+    tool_dir = os.path.abspath(os.path.join(build_dir, '.mp_make_tools', 'esp32'))
+    temp_board_dir = os.path.join(tool_dir, 'boards', board_name)
+    if os.path.exists(temp_board_dir):
+        shutil.rmtree(temp_board_dir)
+    shutil.copytree(board_dir_src, temp_board_dir)
+
+    partitions_csv = os.path.join(tool_dir, 'partitions.csv')
+    sdkconfig_fragment = os.path.join(tool_dir, 'sdkconfig.mp_make_tools')
+    _write_esp32_sdkconfig_fragment(sdkconfig_fragment, flash_mb=flash_mb, partitions_csv=partitions_csv)
+
+    for cmake in glob.glob(os.path.join(temp_board_dir, 'mpconfigboard.cmake')):
+        _append_sdkconfig_defaults(cmake, sdkconfig_fragment)
+    for cmake in glob.glob(os.path.join(temp_board_dir, 'mpconfigvariant*.cmake')):
+        _append_sdkconfig_defaults(cmake, sdkconfig_fragment)
+
+    new_passthrough: list[str] = []
+    for a in passthrough:
+        if a.startswith('BOARD=') or a.startswith('BOARD_DIR='):
+            continue
+        new_passthrough.append(a)
+    new_passthrough.append(f'BOARD_DIR={temp_board_dir}')
+
+    build_name = mv.get('BUILD')
+    if not build_name:
+        build_name = f'build-{board_name}'
+        if board_variant:
+            build_name += f'-{board_variant}'
+
+    return new_passthrough, build_name, partitions_csv
+
 
 def _unique_path(path: str) -> str:
     if not os.path.exists(path):
@@ -186,6 +300,7 @@ def main(argv: list[str] | None = None) -> int:
     from .git_tools import is_head_at_ref
     from .manifest import write_manifest
     from .proc import run, run_bash
+    from .git_config import load_git_config
 
     argv = list(sys.argv[1:] if argv is None else argv)
 
@@ -201,6 +316,11 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument('--esp-idf-chips', dest='esp_idf_chips', default=None, action='store')
     parser.add_argument('--fetch', dest='fetch', default=False, action='store_true')
     parser.add_argument('--sync', dest='sync', default=False, action='store_true')
+    esp32_part_group = parser.add_mutually_exclusive_group()
+    esp32_part_group.add_argument('--esp32-partition-auto', dest='esp32_partition_auto', action='store_const', const=True, default=None)
+    esp32_part_group.add_argument('--no-esp32-partition-auto', dest='esp32_partition_auto', action='store_const', const=False)
+    parser.add_argument('--esp32-flash-mb', dest='esp32_flash_mb', default=None, type=int)
+    parser.add_argument('--esp32-app-margin-kb', dest='esp32_app_margin_kb', default=None, type=int)
     parser.add_argument('--idf-install', dest='idf_install', default=False, action='store_true')
     parser.add_argument('--idf-export', dest='idf_export', default=False, action='store_true')
     parser.add_argument('--no-idf-export', dest='no_idf_export', default=False, action='store_true')
@@ -245,9 +365,43 @@ def main(argv: list[str] | None = None) -> int:
     esp_idf_version = args.esp_idf_version or cfg.esp_idf_version or 'v5.5.1'
     esp_idf_chips = args.esp_idf_chips or cfg.esp_idf_chips or implied_chips or 'esp32'
 
+    if cfg.git_manage:
+        git_cfg, _ = load_git_config(project_dir, cfg.git_manage)
+
+        if git_cfg.micropython:
+            if args.micropython_dir is None and cfg.micropython_dir is None:
+                micropython_dir = os.path.abspath(os.path.join(project_dir, git_cfg.micropython.dir))
+            if args.micropython_url is None and cfg.micropython_url is None:
+                micropython_url = git_cfg.micropython.url
+            if args.micropython_ref is None and cfg.micropython_ref is None and git_cfg.micropython.ref:
+                micropython_ref = git_cfg.micropython.ref
+
+        if git_cfg.esp_idf:
+            if args.esp_idf_dir is None and cfg.esp_idf_dir is None:
+                esp_idf_dir = os.path.abspath(os.path.join(project_dir, git_cfg.esp_idf.dir))
+            if args.esp_idf_url is None and cfg.esp_idf_url is None:
+                esp_idf_url = git_cfg.esp_idf.url
+            if args.esp_idf_version is None and cfg.esp_idf_version is None and git_cfg.esp_idf.ref:
+                esp_idf_version = git_cfg.esp_idf.ref
+            if args.esp_idf_chips is None and cfg.esp_idf_chips is None and git_cfg.esp_idf.chips:
+                esp_idf_chips = str(git_cfg.esp_idf.chips)
+
     build_dir_name = args.build_dir or cfg.build_dir or 'build'
     build_dir = os.path.abspath(os.path.join(project_dir, build_dir_name))
     jobs = args.jobs if args.jobs is not None else (cfg.jobs or (os.cpu_count() or 1))
+
+    if args.esp32_partition_auto is None:
+        esp32_partition_auto = bool(cfg.esp32_partition_auto is True)
+    else:
+        esp32_partition_auto = bool(args.esp32_partition_auto)
+    esp32_flash_mb = int(args.esp32_flash_mb or cfg.esp32_flash_mb or 4)
+    if args.esp32_app_margin_kb is not None:
+        esp32_app_margin_kb = int(args.esp32_app_margin_kb)
+    elif cfg.esp32_app_margin_kb is not None:
+        esp32_app_margin_kb = int(cfg.esp32_app_margin_kb)
+    else:
+        esp32_app_margin_kb = 4
+
     _check_config_mismatch('micropython.dir', cfg.micropython_dir, args.micropython_dir, strict=strict)
     _check_config_mismatch('micropython.url', cfg.micropython_url, args.micropython_url, strict=strict)
     _check_config_mismatch('micropython.ref', cfg.micropython_ref, args.micropython_ref, strict=strict)
@@ -261,6 +415,9 @@ def main(argv: list[str] | None = None) -> int:
     _check_config_mismatch('exmod.root', cfg.exmod_root, args.exmod_root, strict=strict)
     if cfg.exmods is not None and args.exmods:
         _check_config_mismatch('exmod.list', cfg.exmods, args.exmods, strict=strict)
+    _check_config_mismatch('esp32.partition.auto', cfg.esp32_partition_auto, args.esp32_partition_auto, strict=strict)
+    _check_config_mismatch('esp32.partition.flash_mb', cfg.esp32_flash_mb, args.esp32_flash_mb, strict=strict)
+    _check_config_mismatch('esp32.partition.app_margin_kb', cfg.esp32_app_margin_kb, args.esp32_app_margin_kb, strict=strict)
 
     if args.doctor:
         return doctor(target, install=args.install)
@@ -301,6 +458,8 @@ def main(argv: list[str] | None = None) -> int:
                 )
             else:
                 ensure_repo_ref(esp_idf_dir, ref=esp_idf_version, recursive=True)
+
+        pass
 
     if os.path.exists(micropython_dir) and os.path.exists(os.path.join(micropython_dir, '.gitmodules')):
         rc = run(['git', 'submodule', 'update', '--init', '--recursive'], cwd=micropython_dir, env=None)
@@ -359,7 +518,7 @@ def main(argv: list[str] | None = None) -> int:
             )
         raise RuntimeError(f'Unknown target or missing port directory: {port_dir}')
 
-    if not args.no_doctor:
+    if not (args.no_doctor or (cfg.no_doctor is True)):
         rc = doctor(target, install=bool(args.install))
         if rc != 0:
             return rc
@@ -374,10 +533,12 @@ def main(argv: list[str] | None = None) -> int:
     if is_esp32 and os.path.exists(esp_idf_dir):
         env['IDF_PATH'] = esp_idf_dir
 
-    if is_esp32 and not args.no_idf_export and os.path.exists(export_sh) and shutil.which('bash') is None:
+    no_idf_export = bool(args.no_idf_export or (cfg.no_idf_export is True))
+
+    if is_esp32 and not no_idf_export and os.path.exists(export_sh) and shutil.which('bash') is None:
         raise RuntimeError('bash is required for ESP32 builds (to source ESP-IDF export.sh).')
 
-    if is_esp32 and not args.no_idf_export and os.path.exists(esp_idf_dir) and os.path.exists(export_sh):
+    if is_esp32 and not no_idf_export and os.path.exists(esp_idf_dir) and os.path.exists(export_sh):
         _ensure_esp_idf_tools(esp_idf_dir, chips=esp_idf_chips, cwd=project_dir, env=env)
 
     _ensure_mpy_cross(micropython_dir, jobs=jobs, cwd=project_dir, env=env)
@@ -406,40 +567,70 @@ def main(argv: list[str] | None = None) -> int:
     if is_esp32 and os.path.exists(esp_idf_dir) and os.path.exists(os.path.join(esp_idf_dir, 'install.sh')) and args.idf_install:
         run_bash(f'cd {shlex.quote(esp_idf_dir)} && ./install.sh {shlex.quote(esp_idf_chips)}', cwd=project_dir, env=env)
 
-    use_idf_export = is_esp32 and os.path.exists(export_sh) and (args.idf_export or (not args.no_idf_export))
-    should_clean = not bool(args.no_clean)
+    use_idf_export = is_esp32 and os.path.exists(export_sh) and (args.idf_export or (not no_idf_export))
+    should_clean = not bool(args.no_clean or (cfg.no_clean is True))
 
-    if should_clean:
-        clean_cmd = make_base + make_args + ['clean']
+    def run_make(cmd: list[str]) -> int:
         if use_idf_export:
-            clean_cmd_s = ' '.join(shlex.quote(x) for x in clean_cmd)
-            rc = run_bash(
-                f'source {shlex.quote(export_sh)} >/dev/null 2>&1 && {clean_cmd_s}',
+            cmd_s = ' '.join(shlex.quote(x) for x in cmd)
+            return run_bash(
+                f'source {shlex.quote(export_sh)} >/dev/null 2>&1 && {cmd_s}',
                 cwd=project_dir,
                 env=env,
             )
-        else:
-            rc = run(clean_cmd, cwd=project_dir, env=env)
-        if rc != 0:
-            return rc
+        return run(cmd, cwd=project_dir, env=env)
 
-    build_cmd = make_base + make_args
-    if use_idf_export:
-        build_cmd_s = ' '.join(shlex.quote(x) for x in build_cmd)
-        rc = run_bash(
-            f'source {shlex.quote(export_sh)} >/dev/null 2>&1 && {build_cmd_s}',
-            cwd=project_dir,
-            env=env,
+    if is_esp32 and esp32_partition_auto:
+        from .esp32_partitions import write_factory_partitions_csv
+
+        passthrough_esp32, build_name, partitions_csv = _prepare_esp32_partition_auto(
+            project_dir=project_dir,
+            port_dir=port_dir,
+            build_dir=build_dir,
+            passthrough=passthrough,
+            flash_mb=esp32_flash_mb,
         )
+
+        make_args = [f'FROZEN_MANIFEST={out_manifest}']
+        if user_c_modules:
+            make_args.append(f'USER_C_MODULES={os.path.abspath(user_c_modules)}')
+        make_args.extend(passthrough_esp32)
+
+        initial_app_size = 0x100000
+        write_factory_partitions_csv(partitions_csv, flash_mb=esp32_flash_mb, app_size=initial_app_size)
+
+        if should_clean:
+            rc_clean = run_make(make_base + make_args + ['clean'])
+            if rc_clean != 0:
+                return rc_clean
+
+        rc1 = run_make(make_base + make_args)
+
+        build_path = os.path.join(port_dir, build_name)
+        mpy_bin = os.path.join(build_path, 'micropython.bin')
+        if not os.path.exists(mpy_bin):
+            mpy_bin = _find_esp32_micropython_bin(port_dir) or ''
+        if not mpy_bin or not os.path.exists(mpy_bin):
+            return rc1
+
+        app_size = os.path.getsize(mpy_bin) + (esp32_app_margin_kb * 1024)
+        write_factory_partitions_csv(partitions_csv, flash_mb=esp32_flash_mb, app_size=app_size)
+
+        rc = run_make(make_base + make_args)
     else:
-        rc = run(build_cmd, cwd=project_dir, env=env)
+        if should_clean:
+            rc_clean = run_make(make_base + make_args + ['clean'])
+            if rc_clean != 0:
+                return rc_clean
+
+        rc = run_make(make_base + make_args)
 
     if rc == 0 and is_esp32:
         src_bin = _find_esp32_firmware_bin(port_dir)
         if src_bin is None:
             print('WARN: build succeeded but firmware.bin was not found under the port build directory.')
         else:
-            stem = _safe_output_stem(args.name or raw_target)
+            stem = _safe_output_stem(args.name or cfg.name or raw_target)
             dst_bin = _unique_path(os.path.join(build_dir, f'{stem}.bin'))
             shutil.copy2(src_bin, dst_bin)
             print('Output: ' + dst_bin)

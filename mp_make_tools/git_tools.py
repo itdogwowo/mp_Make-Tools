@@ -30,3 +30,27 @@ def is_head_at_ref(repo_dir: str, ref: str) -> bool:
     head = head_commit(repo_dir)
     return bool(desired and head and desired == head)
 
+
+def tags_pointing_at_head(repo_dir: str) -> list[str]:
+    repo_dir = os.path.abspath(repo_dir)
+    rc, out = _git(['tag', '--points-at', 'HEAD'], cwd=repo_dir)
+    if rc != 0 or not out:
+        return []
+    return [line.strip() for line in out.splitlines() if line.strip()]
+
+
+def list_tags(repo_dir: str, *, limit: int = 50) -> list[str]:
+    repo_dir = os.path.abspath(repo_dir)
+    rc, out = _git(['tag', '--sort=-creatordate'], cwd=repo_dir)
+    if rc != 0 or not out:
+        return []
+    tags = [line.strip() for line in out.splitlines() if line.strip()]
+    return tags[: max(0, int(limit))]
+
+
+def describe(repo_dir: str) -> str | None:
+    repo_dir = os.path.abspath(repo_dir)
+    rc, out = _git(['describe', '--tags', '--always', '--dirty'], cwd=repo_dir)
+    if rc != 0 or not out:
+        return None
+    return out

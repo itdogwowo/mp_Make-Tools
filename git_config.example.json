@@ -1,0 +1,19 @@
+{
+  "micropython": {
+    "dir": "lib/micropython",
+    "url": "https://github.com/micropython/micropython",
+    "ref": null,
+    "recursive": true
+  },
+  "esp_idf": {
+    "dir": "lib/esp-idf",
+    "url": "https://github.com/espressif/esp-idf",
+    "ref": "v5.5.1",
+    "recursive": true,
+    "chips": "esp32",
+    "no_export": false
+  },
+  "tags_limit": 30,
+  "write_detected_to": "config.json",
+  "update_detected_on_fetch": false
+}

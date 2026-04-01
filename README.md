@@ -54,11 +54,44 @@ python3 /path/to/mp_Make-Tools/make.py --project-dir /path/to/firmware --manifes
 
 - `mp_make_tools.config.json`
 - `mp_make_tools.json`
+- `make_config.json`
+- `make_config.example.json`
 - `config.json`
+- `config.example.json`
 
 或用 `--config /path/to/config.json` 指定。
 
-範例可參考：[config.example.json](file:///c:/Users/bl91920/Documents/code/git/lvgl_micropython/mp_Make-Tools/config.example.json)
+如果你的 firmware repo 沒有放設定檔，工具會退回讀取 `mp_Make-Tools` repo 內的預設設定（優先 `config.json`，其次 `config.example.json`）。
+
+第一次執行時，如果完全找不到任何設定檔，工具會自動從 `make_config.example.json`（或 `config.example.json`）複製一份到 `project-dir/make_config.json` 讓你直接修改。
+
+範例可參考：[make_config.example.json](file:///c:/Users/bl91920/Documents/code/git/lvgl_micropython/mp_Make-Tools/make_config.example.json)
+
+### git_manage
+
+如果你希望把「repo 來源/版本（tag/ref）」集中管理在 `git_config.json`，可以在 `make_config.json` 設定：
+
+- `git_manage`: `"git_config.json"`
+
+此時 `make.py` 會優先從 `git_config.json` 取得：
+
+- `micropython.dir/url/ref`
+- `esp_idf.dir/url/ref`（會對應到 build 端的 `esp_idf.version`）
+
+CLI 參數仍然具有最高優先權。
+
+### Git 設定檔（git_config.json）
+
+Git 相關操作（下載/同步 repo、列出 tag、把版本資訊寫回 config）已獨立成 `git.py`，並使用另一份設定檔：
+
+- `mp_make_tools.git_config.json`
+- `mp_make_tools.git.json`
+- `git_config.json`
+- `git_config.example.json`
+
+範例可參考：[git_config.example.json](file:///c:/Users/bl91920/Documents/code/git/lvgl_micropython/mp_Make-Tools/git_config.example.json)
+
+第一次執行時，如果完全找不到任何 git 設定檔，工具會自動從 `git_config.example.json` 複製一份到 `project-dir/git_config.json` 讓你直接修改。
 
 ### 參數一致性檢查
 
@@ -112,6 +145,25 @@ python3 /path/to/mp_Make-Tools/make.py --project-dir /path/to/firmware \
 ```
 
 如果你的 repo 已經用 git submodule 定義了 `lib/micropython`/`lib/esp-idf`，`--fetch` 會優先用 submodule 更新；沒有 submodule 才會用 `git clone --depth=1`。
+
+### 將目前版本與 tag 寫回 config（方便複製）
+
+你可以在下載/同步後，用獨立的 git 工具把「目前 checkout 的版本」與「近期 tags」寫回你的 config，讓你快速複製要鎖定的 tag/version：
+
+```bash
+python3 /path/to/mp_Make-Tools/git.py --project-dir /path/to/firmware \
+  --fetch --write-detected
+```
+
+會寫入（或更新）`detected.*` 欄位，例如：
+
+- `detected.micropython.head` / `detected.micropython.describe`
+- `detected.micropython.tags_at_head` / `detected.micropython.recent_tags`
+- `detected.esp_idf.*`
+
+預設會更新 `project-dir/config.json`（若不存在則建立）。
+
+如果你希望每次 `--fetch` 都自動更新，可以在 `git_config.json` 設定 `update_detected_on_fetch=true`。
 
 ESP-IDF 版本建議（MicroPython 推薦）：`v5.5.1`（也支援 `v5.3`、`v5.4`、`v5.4.1`、`v5.4.2`）。可用：
 
@@ -181,6 +233,35 @@ ESP32 建置成功後，工具會自動把 `firmware.bin` 改名複製到你的�
 
 ```bash
 python3 /path/to/mp_Make-Tools/make.py --project-dir /path/to/firmware --name my_firmware esp32s3 BOARD=ESP32_GENERIC_S3
+```
+
+## ESP32 分割表自動調整（factory-only）
+
+如果你希望「永遠用兩段式建置」來最大化 `vfs` 分區（檔案系統空間），可以啟用分割表自動調整：
+
+- 第一次建置：先取得 `micropython.bin` 的實際大小（即使封裝失敗也沒關係，只要 `micropython.bin` 已生成）
+- 第二次建置：依據第一次的 `micropython.bin` 大小重寫 `partitions.csv`，讓 `factory` 分區剛好放得下 app，`vfs` 吃掉剩餘空間，最後封裝成功
+
+設定檔（建議）：
+
+```json
+{
+  "esp32": {
+    "partition": {
+      "auto": true,
+      "flash_mb": 4,
+      "app_margin_kb": 0
+    }
+  }
+}
+```
+
+CLI 也可覆寫：
+
+```bash
+python3 /path/to/mp_Make-Tools/make.py --project-dir /path/to/firmware \
+  --esp32-partition-auto --esp32-flash-mb 4 --esp32-app-margin-kb 0 \
+  esp32 BOARD=ESP32_GENERIC
 ```
 
 ## Freeze 與額外 manifest
