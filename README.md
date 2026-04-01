@@ -65,7 +65,7 @@ python3 /path/to/mp_Make-Tools/make.py --project-dir /path/to/firmware --manifes
 
 第一次執行時，如果完全找不到任何設定檔，工具會自動從 `make_config.example.json`（或 `config.example.json`）複製一份到 `project-dir/make_config.json` 讓你直接修改。
 
-範例可參考：[make_config.example.json](file:///c:/Users/bl91920/Documents/code/git/lvgl_micropython/mp_Make-Tools/make_config.example.json)
+範例可參考：`mp_Make-Tools/make_config.example.json`
 
 ### git_manage
 
@@ -73,7 +73,9 @@ python3 /path/to/mp_Make-Tools/make.py --project-dir /path/to/firmware --manifes
 
 - `git_manage`: `"git_config.json"`
 
-此時 `make.py` 會優先從 `git_config.json` 取得：
+此時 `make.py` 每次執行都會先跑一次 git manager（依 git_config 下載/同步 repo、checkout 到指定 ref、更新 submodules、收集 tags/branch 資訊），再開始 build。
+
+`make.py` 會優先從 `git_config.json` 取得：
 
 - `micropython.dir/url/ref`
 - `esp_idf.dir/url/ref`（會對應到 build 端的 `esp_idf.version`）
@@ -89,9 +91,13 @@ Git 相關操作（下載/同步 repo、列出 tag、把版本資訊寫回 confi
 - `git_config.json`
 - `git_config.example.json`
 
-範例可參考：[git_config.example.json](file:///c:/Users/bl91920/Documents/code/git/lvgl_micropython/mp_Make-Tools/git_config.example.json)
+範例可參考：`mp_Make-Tools/git_config.example.json`
 
 第一次執行時，如果完全找不到任何 git 設定檔，工具會自動從 `git_config.example.json` 複製一份到 `project-dir/git_config.json` 讓你直接修改。
+
+`git_config.json` 也可以設定 detected 檔案裡清單的排版方式：
+
+- `list_wrap`: 每行顯示幾個項目（例如 tags/branches；預設 3）
 
 ### 參數一致性檢查
 
@@ -312,3 +318,8 @@ python3 /path/to/mp_Make-Tools/make.py --project-dir /path/to/firmware \
 
 - `build/manifest.py` 一律由工具產生，並以 `FROZEN_MANIFEST=...` 傳給 MicroPython build。
 - Windows：目前工具只保證 `--manifest-only` 可用；實際編譯仍建議在 Linux/macOS 環境進行。
+
+## 致謝 (Acknowledgements)
+
+本工具的設計靈感與部分編譯流程參考自 [lvgl_micropython](https://github.com/lvgl/lvgl_micropython) 以及官方 [MicroPython](https://github.com/micropython/micropython) 的建置生態，特此致謝。
+

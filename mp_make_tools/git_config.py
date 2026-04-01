@@ -12,15 +12,20 @@ class RepoSpec:
     url: str
     ref: str | None = None
     recursive: bool = False
-    chips: str | None = None
-    no_export: bool | None = None
+
+
+@dataclass(frozen=True)
+class NamedRepoSpec(RepoSpec):
+    name: str = ''
 
 
 @dataclass(frozen=True)
 class GitConfig:
     micropython: RepoSpec | None = None
     esp_idf: RepoSpec | None = None
+    repos: list[NamedRepoSpec] | None = None
     tags_limit: int = 30
+    list_wrap: int = 3
     write_detected_to: str | None = 'config.json'
     update_detected_on_fetch: bool = False
 
@@ -109,9 +114,33 @@ def _load_repo_spec(data: dict, key: str) -> RepoSpec | None:
         url=str(url),
         ref=node.get('ref'),
         recursive=bool(node.get('recursive') is True),
-        chips=node.get('chips'),
-        no_export=(True if node.get('no_export') is True else (False if node.get('no_export') is False else None)),
     )
+
+
+def _load_repos_list(data: dict) -> list[NamedRepoSpec] | None:
+    node = data.get('repos')
+    if not isinstance(node, list):
+        return None
+
+    out: list[NamedRepoSpec] = []
+    for item in node:
+        if not isinstance(item, dict):
+            continue
+        name = str(item.get('name') or '').strip()
+        dir_ = item.get('dir')
+        url = item.get('url')
+        if not name or not dir_ or not url:
+            continue
+        out.append(
+            NamedRepoSpec(
+                name=name,
+                dir=str(dir_),
+                url=str(url),
+                ref=item.get('ref'),
+                recursive=bool(item.get('recursive') is True),
+            )
+        )
+    return out or None
 
 
 def load_git_config(project_dir: str, git_config_path: str | None) -> tuple[GitConfig, str | None]:
@@ -127,7 +156,9 @@ def load_git_config(project_dir: str, git_config_path: str | None) -> tuple[GitC
 
     micropython = _load_repo_spec(data, 'micropython')
     esp_idf = _load_repo_spec(data, 'esp_idf')
+    repos = _load_repos_list(data)
     tags_limit = int(_deep_get(data, ['tags_limit'], 30) or 30)
+    list_wrap = int(_deep_get(data, ['list_wrap'], 3) or 3)
     write_detected_to = _deep_get(data, ['write_detected_to'], 'config.json')
     update_detected_on_fetch = bool(_deep_get(data, ['update_detected_on_fetch'], False) is True)
 
@@ -135,7 +166,9 @@ def load_git_config(project_dir: str, git_config_path: str | None) -> tuple[GitC
         GitConfig(
             micropython=micropython,
             esp_idf=esp_idf,
+            repos=repos,
             tags_limit=tags_limit,
+            list_wrap=list_wrap,
             write_detected_to=write_detected_to,
             update_detected_on_fetch=update_detected_on_fetch,
         ),

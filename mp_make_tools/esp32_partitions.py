@@ -22,6 +22,7 @@ def write_factory_partitions_csv(
     nvs_size: int = 0x6000,
     phy_init_size: int = 0x1000,
     first_offset: int = 0x9000,
+    include_vfs: bool = False,
     vfs_subtype: str = 'fat',
 ) -> None:
     if flash_mb <= 0:
@@ -44,18 +45,18 @@ def write_factory_partitions_csv(
     offset += app_size
 
     total_size = _align_down(int(flash_mb) * (2**20), 0x1000)
-    vfs_size = _align_down(total_size - offset, 0x1000)
-    if vfs_size <= 0:
-        raise RuntimeError('There is not enough flash to store the firmware.')
-
-    parts.append(f'vfs,data,{vfs_subtype},0x{offset:X},0x{vfs_size:X}')
-    offset += vfs_size
-
     if offset > total_size:
         raise RuntimeError('There is not enough flash to store the firmware.')
+
+    if include_vfs:
+        vfs_size = _align_down(total_size - offset, 0x1000)
+        if vfs_size <= 0:
+            raise RuntimeError('There is not enough flash to store the firmware.')
+
+        parts.append(f'vfs,data,{vfs_subtype},0x{offset:X},0x{vfs_size:X}')
+        offset += vfs_size
 
     with open(out_csv, 'w', encoding='utf-8') as f:
         f.write(PARTITION_HEADER)
         f.write('\n'.join(parts))
         f.write('\n')
-

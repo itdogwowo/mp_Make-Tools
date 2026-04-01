@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import os
+import subprocess
 
 from .proc import run
 
@@ -67,9 +68,38 @@ def ensure_repo_ref(dest: str, *, ref: str | None, recursive: bool) -> None:
     if not os.path.exists(dest):
         return
 
+    def _ref_exists(r: str) -> bool:
+        proc = subprocess.run(
+            ['git', '-C', dest, 'rev-parse', '--verify', r],
+            cwd=dest,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+        )
+        return int(proc.returncode) == 0
+
     if ref:
-        run(['git', '-C', dest, 'fetch', '--tags'], cwd=dest)
-        run(['git', '-C', dest, 'checkout', ref], cwd=dest)
+        if not _ref_exists(ref):
+            run(['git', '-c', 'fetch.recurseSubmodules=no', '-C', dest, 'fetch', '--tags'], cwd=dest)
+        if not _ref_exists(ref):
+            run(['git', '-c', 'fetch.recurseSubmodules=no', '-C', dest, 'fetch', '--depth=1', 'origin', ref], cwd=dest)
+
+        remote_branch_ref = None
+        if not ref.startswith('refs/') and not ref.startswith('origin/'):
+            candidate = f'refs/remotes/origin/{ref}'
+            if _ref_exists(candidate):
+                remote_branch_ref = f'origin/{ref}'
+        elif ref.startswith('origin/'):
+            candidate = f'refs/remotes/{ref}'
+            if _ref_exists(candidate):
+                remote_branch_ref = ref
+
+        if remote_branch_ref is not None:
+            local_branch = ref[len('origin/') :] if ref.startswith('origin/') else ref
+            run(['git', '-C', dest, 'checkout', '-B', local_branch, remote_branch_ref], cwd=dest)
+        elif _ref_exists(ref):
+            run(['git', '-C', dest, 'checkout', ref], cwd=dest)
+        else:
+            print(f'WARN: ref not found in {dest}: {ref}')
 
     if recursive:
         run(['git', '-C', dest, 'submodule', 'update', '--init', '--recursive'], cwd=dest)

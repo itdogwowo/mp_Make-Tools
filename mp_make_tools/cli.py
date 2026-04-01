@@ -296,11 +296,10 @@ def main(argv: list[str] | None = None) -> int:
 
     from .config import load_config
     from .doctor import doctor
-    from .fetch import ensure_repo_ref, ensure_submodule_or_clone
     from .git_tools import is_head_at_ref
     from .manifest import write_manifest
     from .proc import run, run_bash
-    from .git_config import load_git_config
+    from .git_manager import ensure_managed_repos
 
     argv = list(sys.argv[1:] if argv is None else argv)
 
@@ -316,6 +315,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument('--esp-idf-chips', dest='esp_idf_chips', default=None, action='store')
     parser.add_argument('--fetch', dest='fetch', default=False, action='store_true')
     parser.add_argument('--sync', dest='sync', default=False, action='store_true')
+    parser.add_argument('--no-git-manage', dest='no_git_manage', default=False, action='store_true')
     esp32_part_group = parser.add_mutually_exclusive_group()
     esp32_part_group.add_argument('--esp32-partition-auto', dest='esp32_partition_auto', action='store_const', const=True, default=None)
     esp32_part_group.add_argument('--no-esp32-partition-auto', dest='esp32_partition_auto', action='store_const', const=False)
@@ -358,33 +358,30 @@ def main(argv: list[str] | None = None) -> int:
     micropython_dir = os.path.abspath(args.micropython_dir or cfg.micropython_dir or _default_micropython_dir(project_dir))
     esp_idf_dir = os.path.abspath(args.esp_idf_dir or cfg.esp_idf_dir or _default_esp_idf_dir(project_dir))
 
-    micropython_url = args.micropython_url or cfg.micropython_url or 'https://github.com/micropython/micropython'
-    micropython_ref = args.micropython_ref or cfg.micropython_ref
+    should_fetch = bool(args.fetch or args.sync)
+    if cfg.git_manage and not args.no_git_manage:
+        git_cfg, _, repo_dirs, _ = ensure_managed_repos(
+            project_dir=project_dir,
+            git_config_path=cfg.git_manage,
+            allow_network=True,
+        )
+        micropython_dir = os.path.abspath(repo_dirs.get('micropython', micropython_dir))
+        esp_idf_dir = os.path.abspath(repo_dirs.get('esp_idf', esp_idf_dir))
+        if args.micropython_ref is None and cfg.micropython_ref is None and git_cfg.micropython and git_cfg.micropython.ref:
+            micropython_ref = git_cfg.micropython.ref
+        else:
+            micropython_ref = args.micropython_ref or cfg.micropython_ref
 
-    esp_idf_url = args.esp_idf_url or cfg.esp_idf_url or 'https://github.com/espressif/esp-idf'
-    esp_idf_version = args.esp_idf_version or cfg.esp_idf_version or 'v5.5.1'
+        if args.esp_idf_version is None and cfg.esp_idf_version is None and git_cfg.esp_idf and git_cfg.esp_idf.ref:
+            esp_idf_version = git_cfg.esp_idf.ref
+        else:
+            esp_idf_version = args.esp_idf_version or cfg.esp_idf_version or 'v5.5.1'
+        should_fetch = False
+    else:
+        micropython_ref = args.micropython_ref or cfg.micropython_ref
+        esp_idf_version = args.esp_idf_version or cfg.esp_idf_version or 'v5.5.1'
+
     esp_idf_chips = args.esp_idf_chips or cfg.esp_idf_chips or implied_chips or 'esp32'
-
-    if cfg.git_manage:
-        git_cfg, _ = load_git_config(project_dir, cfg.git_manage)
-
-        if git_cfg.micropython:
-            if args.micropython_dir is None and cfg.micropython_dir is None:
-                micropython_dir = os.path.abspath(os.path.join(project_dir, git_cfg.micropython.dir))
-            if args.micropython_url is None and cfg.micropython_url is None:
-                micropython_url = git_cfg.micropython.url
-            if args.micropython_ref is None and cfg.micropython_ref is None and git_cfg.micropython.ref:
-                micropython_ref = git_cfg.micropython.ref
-
-        if git_cfg.esp_idf:
-            if args.esp_idf_dir is None and cfg.esp_idf_dir is None:
-                esp_idf_dir = os.path.abspath(os.path.join(project_dir, git_cfg.esp_idf.dir))
-            if args.esp_idf_url is None and cfg.esp_idf_url is None:
-                esp_idf_url = git_cfg.esp_idf.url
-            if args.esp_idf_version is None and cfg.esp_idf_version is None and git_cfg.esp_idf.ref:
-                esp_idf_version = git_cfg.esp_idf.ref
-            if args.esp_idf_chips is None and cfg.esp_idf_chips is None and git_cfg.esp_idf.chips:
-                esp_idf_chips = str(git_cfg.esp_idf.chips)
 
     build_dir_name = args.build_dir or cfg.build_dir or 'build'
     build_dir = os.path.abspath(os.path.join(project_dir, build_dir_name))
@@ -422,7 +419,6 @@ def main(argv: list[str] | None = None) -> int:
     if args.doctor:
         return doctor(target, install=args.install)
 
-    should_fetch = bool(args.fetch or args.sync)
     if not should_fetch and not os.path.exists(micropython_dir):
         if _is_within_dir(micropython_dir, project_dir):
             should_fetch = True
@@ -435,34 +431,14 @@ def main(argv: list[str] | None = None) -> int:
             raise RuntimeError(f'ESP-IDF checkout not found at {esp_idf_dir}. Run with --fetch or set --esp-idf-dir.')
 
     if should_fetch:
-        if not os.path.exists(micropython_dir):
-            micropython_dir = ensure_submodule_or_clone(
-                project_dir=project_dir,
-                rel_path=os.path.relpath(micropython_dir, project_dir),
-                url=micropython_url,
-                ref=micropython_ref,
-                depth=1,
-            )
-        else:
-            ensure_repo_ref(micropython_dir, ref=micropython_ref, recursive=False)
-
-        if target.lower() == 'esp32':
-            if not os.path.exists(esp_idf_dir):
-                ensure_submodule_or_clone(
-                    project_dir=project_dir,
-                    rel_path=os.path.relpath(esp_idf_dir, project_dir),
-                    url=esp_idf_url,
-                    ref=esp_idf_version,
-                    recursive=True,
-                    depth=1,
-                )
-            else:
-                ensure_repo_ref(esp_idf_dir, ref=esp_idf_version, recursive=True)
+        if cfg.git_manage and not args.no_git_manage:
+            ensure_managed_repos(project_dir=project_dir, git_config_path=cfg.git_manage, allow_network=True)
+            should_fetch = False
 
         pass
 
     if os.path.exists(micropython_dir) and os.path.exists(os.path.join(micropython_dir, '.gitmodules')):
-        rc = run(['git', 'submodule', 'update', '--init', '--recursive'], cwd=micropython_dir, env=None)
+        rc = run(['git', '-c', 'fetch.recurseSubmodules=no', 'submodule', 'update', '--init', '--recursive'], cwd=micropython_dir, env=None)
         if rc != 0:
             raise RuntimeError('Failed to initialise MicroPython submodules.')
 

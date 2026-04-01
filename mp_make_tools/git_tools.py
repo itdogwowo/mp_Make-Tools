@@ -54,3 +54,25 @@ def describe(repo_dir: str) -> str | None:
     if rc != 0 or not out:
         return None
     return out
+
+
+def current_branch(repo_dir: str) -> str | None:
+    repo_dir = os.path.abspath(repo_dir)
+    rc, out = _git(['branch', '--show-current'], cwd=repo_dir)
+    if rc == 0 and out:
+        return out
+    rc, out = _git(['rev-parse', '--abbrev-ref', 'HEAD'], cwd=repo_dir)
+    if rc != 0 or not out or out == 'HEAD':
+        return None
+    return out
+
+
+def list_recent_remote_branches(repo_dir: str, *, limit: int = 30, remote: str = 'origin') -> list[str]:
+    repo_dir = os.path.abspath(repo_dir)
+    fmt = '%(refname:short)'
+    ref = f'refs/remotes/{remote}'
+    rc, out = _git(['for-each-ref', f'--sort=-committerdate', f'--format={fmt}', ref], cwd=repo_dir)
+    if rc != 0 or not out:
+        return []
+    branches = [line.strip() for line in out.splitlines() if line.strip()]
+    return branches[: max(0, int(limit))]

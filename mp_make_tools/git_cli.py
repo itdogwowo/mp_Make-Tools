@@ -8,7 +8,8 @@ from datetime import datetime
 from .config_update import update_json_file
 from .fetch import ensure_repo_ref, ensure_submodule_or_clone
 from .git_config import load_git_config
-from .git_tools import describe, head_commit, list_tags, tags_pointing_at_head
+from .git_tools import describe, head_commit, list_tags, tags_pointing_at_head, current_branch, list_recent_remote_branches
+from .proc import run
 
 
 def _default_project_dir() -> str:
@@ -34,22 +35,28 @@ def _write_detected(
     updates.append((['detected', 'timestamp_utc'], ts))
 
     if micropython_dir and os.path.exists(micropython_dir):
+        run(['git', '-c', 'fetch.recurseSubmodules=no', '-C', micropython_dir, 'fetch', '--tags'], cwd=project_dir, env=None)
         updates.append((['detected', 'micropython', 'dir'], micropython_dir))
         updates.append((['detected', 'micropython', 'head'], head_commit(micropython_dir)))
         updates.append((['detected', 'micropython', 'describe'], describe(micropython_dir)))
+        updates.append((['detected', 'micropython', 'branch'], current_branch(micropython_dir)))
         updates.append((['detected', 'micropython', 'tags_at_head'], tags_pointing_at_head(micropython_dir)))
         updates.append((['detected', 'micropython', 'recent_tags'], list_tags(micropython_dir, limit=tags_limit)))
+        updates.append((['detected', 'micropython', 'recent_remote_branches'], list_recent_remote_branches(micropython_dir, limit=tags_limit)))
 
     if esp_idf_dir and os.path.exists(esp_idf_dir):
+        run(['git', '-c', 'fetch.recurseSubmodules=no', '-C', esp_idf_dir, 'fetch', '--tags'], cwd=project_dir, env=None)
         updates.append((['detected', 'esp_idf', 'dir'], esp_idf_dir))
         updates.append((['detected', 'esp_idf', 'head'], head_commit(esp_idf_dir)))
         updates.append((['detected', 'esp_idf', 'describe'], describe(esp_idf_dir)))
+        updates.append((['detected', 'esp_idf', 'branch'], current_branch(esp_idf_dir)))
         updates.append((['detected', 'esp_idf', 'tags_at_head'], tags_pointing_at_head(esp_idf_dir)))
         updates.append((['detected', 'esp_idf', 'recent_tags'], list_tags(esp_idf_dir, limit=tags_limit)))
+        updates.append((['detected', 'esp_idf', 'recent_remote_branches'], list_recent_remote_branches(esp_idf_dir, limit=tags_limit)))
 
     if not os.path.isabs(out_path):
         out_path = os.path.join(project_dir, out_path)
-    return update_json_file(out_path, updates)
+    return update_json_file(out_path, updates, list_wrap=3)
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -124,4 +131,3 @@ def main(argv: list[str] | None = None) -> int:
         print('ESP-IDF: ' + esp_idf_dir)
         print('  describe: ' + str(describe(esp_idf_dir)))
     return 0
-

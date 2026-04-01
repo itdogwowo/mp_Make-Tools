@@ -1,0 +1,26 @@
+mp_Make-Tools
+
+========================================================================
+THIRD-PARTY SOFTWARE NOTICES AND INFORMATION
+========================================================================
+
+This project incorporates modified build scripts, partition logic, and concepts 
+adapted from the following open-source projects. We gratefully acknowledge their work.
+
+1. lvgl_micropython
+------------------------------------------------------------------------
+Copyright (c) 2023 LVGL Project
+License: MIT License
+Repository: https://github.com/lvgl/lvgl_micropython
+
+Portions of the compilation flow and wrapper scripts were adapted from 
+the lvgl_micropython build environment.
+
+2. MicroPython
+------------------------------------------------------------------------
+Copyright (c) 2013-2023 Damien P. George
+License: MIT License
+Repository: https://github.com/micropython/micropython
+
+Portions of the partition table generation logic and VFS dynamic expansion 
+concepts were adapted from the official MicroPython ESP32 port.

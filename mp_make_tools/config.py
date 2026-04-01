@@ -46,13 +46,11 @@ def _find_default_config_path(project_dir: str) -> str | None:
     tool_root = os.path.abspath(os.path.join(os.path.dirname(__file__), os.pardir))
     candidates = [
         os.path.join(project_dir, 'make_config.json'),
-        os.path.join(project_dir, 'make_config.example.json'),
         os.path.join(project_dir, 'mp_make_tools.config.json'),
         os.path.join(project_dir, 'mp_make_tools.json'),
         os.path.join(project_dir, 'config.json'),
         os.path.join(project_dir, 'config.example.json'),
         os.path.join(tool_root, 'make_config.json'),
-        os.path.join(tool_root, 'make_config.example.json'),
         os.path.join(tool_root, 'config.json'),
         os.path.join(tool_root, 'config.example.json'),
     ]
@@ -72,9 +70,7 @@ def _ensure_default_make_config(project_dir: str) -> str | None:
 
     src_candidates = [
         os.path.join(project_dir, 'make_config.example.json'),
-        os.path.join(project_dir, 'config.example.json'),
         os.path.join(tool_root, 'make_config.example.json'),
-        os.path.join(tool_root, 'config.example.json'),
     ]
 
     src = None
@@ -94,11 +90,11 @@ def resolve_config_path(project_dir: str, config_path: str | None) -> str | None
     if config_path:
         return os.path.abspath(config_path)
 
-    found = _find_default_config_path(project_dir)
-    if found:
-        return found
+    ensure = _ensure_default_make_config(project_dir)
+    if ensure:
+        return ensure
 
-    return _ensure_default_make_config(project_dir)
+    return _find_default_config_path(project_dir)
 
 
 def load_config(project_dir: str, config_path: str | None) -> MpConfig:
