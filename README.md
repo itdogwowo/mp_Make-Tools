@@ -134,6 +134,33 @@ python3 /path/to/mp_Make-Tools/make.py --project-dir /path/to/firmware \
   esp32 BOARD=ESP32_GENERIC
 ```
 
+### build.target（預設 target）
+
+如果你希望日常只執行 `python3.12 make.py`，可以把 target 寫進設定檔：
+
+- `build.target`：例如 `esp32s3`、`esp32p4`、`unix`
+
+### esp32.make.vars（ESP32 make 變數）
+
+ESP32 port 的一些選項通常是用 `make` 變數傳入（例如 `BOARD`、`BOARD_VARIANT`）。你可以集中寫在設定檔，避免每次重打：
+
+- `esp32.make.vars`：例如 `{ "BOARD": "...", "BOARD_VARIANT": "..." }`
+- 規則：如果命令列有同名 `KEY=VALUE`，命令列優先；否則才會從設定檔補上
+
+#### ESP32_GENERIC_P4 的 Wi-Fi/BLE 變體
+
+`ESP32_GENERIC_P4` 依板子是否帶外掛 Wi-Fi/BLE 協處理器（ESP32-C5/ESP32-C6）而有不同變體：
+
+- 純 ESP32-P4（不使用協處理器）：不設定 `BOARD_VARIANT`
+- 外掛 ESP32-C5（Wi-Fi/BLE）：`BOARD_VARIANT=C5_WIFI`
+- 外掛 ESP32-C6（Wi-Fi/BLE）：`BOARD_VARIANT=C6_WIFI`
+
+### esp32.idf_component.dependencies（ESP-IDF component 依賴）
+
+若你的 user C module 需要額外的 ESP-IDF component（例如 `espressif/esp_new_jpeg`），可用設定檔自動補到 `ports/esp32/main/idf_component.yml`：
+
+- `esp32.idf_component.dependencies`：例如 `{ "espressif/esp_new_jpeg": "^1.0.0" }`
+
 ## 自動下載（fetch）
 
 如果你的 firmware repo 還沒有把 source 拉下來，工具可以幫你：
