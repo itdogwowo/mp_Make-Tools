@@ -20,6 +20,12 @@
 python3 /path/to/mp_Make-Tools/make.py unix
 ```
 
+你也可以把 `target` 寫進設定檔（`build.target`），讓日常使用只剩「固定 python 版本」這個差異：
+
+```bash
+python3.12 /path/to/mp_Make-Tools/make.py
+```
+
 指定專案路徑（從任何位置執行都可）：
 
 ```bash
@@ -252,6 +258,9 @@ python3 /path/to/mp_Make-Tools/make.py --project-dir /path/to/firmware --name my
 
 ```json
 {
+  "build": {
+    "target": "esp32s3"
+  },
   "esp32": {
     "partition": {
       "auto": true,
@@ -261,6 +270,12 @@ python3 /path/to/mp_Make-Tools/make.py --project-dir /path/to/firmware --name my
     "idf_component": {
       "dependencies": {
         "espressif/esp_new_jpeg": "^1.0.0"
+      }
+    },
+    "make": {
+      "vars": {
+        "BOARD": "ESP32_GENERIC_S3",
+        "BOARD_VARIANT": "SPIRAM_OCT"
       }
     }
   }

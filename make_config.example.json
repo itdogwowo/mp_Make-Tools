@@ -5,6 +5,7 @@
     "no_export": false
   },
   "build": {
+    "target": "esp32s3",
     "dir": "build",
     "jobs": null,
     "user_c_modules": null,
@@ -14,10 +15,7 @@
   },
   "exmod": {
     "root": "ext_mod",
-    "list": [
-      "/lcd_bus/micropython.cmake",
-      "/lcd_utils/micropython.cmake"
-    ]
+    "list": []
   },
   "esp32": {
     "partition": {
@@ -28,6 +26,12 @@
     "idf_component": {
       "dependencies": {
         "espressif/esp_new_jpeg": "^1.0.0"
+      }
+    },
+    "make": {
+      "vars": {
+        "BOARD": "ESP32_GENERIC_S3",
+        "BOARD_VARIANT": "SPIRAM_OCT"
       }
     }
   },

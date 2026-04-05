@@ -8,6 +8,7 @@ from dataclasses import dataclass
 
 @dataclass(frozen=True)
 class MpConfig:
+    target: str | None = None
     micropython_dir: str | None = None
     micropython_url: str | None = None
     micropython_ref: str | None = None
@@ -32,6 +33,7 @@ class MpConfig:
     esp32_flash_mb: int | None = None
     esp32_app_margin_kb: int | None = None
     esp32_idf_component_dependencies: dict[str, str] | None = None
+    esp32_make_vars: dict[str, str] | None = None
 
 
 def _deep_get(dct: dict, keys: list[str], default=None):
@@ -108,6 +110,7 @@ def load_config(project_dir: str, config_path: str | None) -> MpConfig:
         data = json.load(f)
 
     return MpConfig(
+        target=_deep_get(data, ['build', 'target']) or _deep_get(data, ['target']),
         micropython_dir=_deep_get(data, ['micropython', 'dir']),
         micropython_url=_deep_get(data, ['micropython', 'url']),
         micropython_ref=_deep_get(data, ['micropython', 'ref']),
@@ -130,4 +133,5 @@ def load_config(project_dir: str, config_path: str | None) -> MpConfig:
         esp32_flash_mb=_deep_get(data, ['esp32', 'partition', 'flash_mb']),
         esp32_app_margin_kb=_deep_get(data, ['esp32', 'partition', 'app_margin_kb']),
         esp32_idf_component_dependencies=_deep_get(data, ['esp32', 'idf_component', 'dependencies']),
+        esp32_make_vars=_deep_get(data, ['esp32', 'make', 'vars']) or _deep_get(data, ['esp32', 'make_vars']),
     )

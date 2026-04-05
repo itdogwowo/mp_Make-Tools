@@ -47,6 +47,25 @@ def _extract_make_vars(args: list[str]) -> dict[str, str]:
         out[k] = v
     return out
 
+def _apply_make_vars(passthrough: list[str], vars_from_cfg: dict[str, str] | None) -> list[str]:
+    if not vars_from_cfg:
+        return passthrough
+
+    existing = _extract_make_vars(passthrough)
+    additions: list[str] = []
+    for k in sorted(vars_from_cfg.keys()):
+        v = vars_from_cfg.get(k)
+        if not isinstance(k, str) or not isinstance(v, str):
+            continue
+        kk = k.strip()
+        vv = v.strip()
+        if not kk or not vv:
+            continue
+        if kk in existing:
+            continue
+        additions.append(f'{kk}={vv}')
+    return passthrough + additions
+
 def _cmake_path(path: str) -> str:
     return os.path.abspath(path).replace('\\', '/')
 
@@ -389,15 +408,17 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument('--exmod', dest='exmods', action='append', default=[])
     parser.add_argument('--jobs', dest='jobs', default=None, type=int)
 
-    parser.add_argument('target', nargs=1)
+    parser.add_argument('target', nargs='?', default=None)
     args, passthrough = parser.parse_known_args(argv)
-
-    raw_target = args.target[0]
-    target, implied_chips = _normalize_target_and_chips(raw_target)
 
     project_dir = os.path.abspath(args.project_dir or _default_project_dir())
     cfg = load_config(project_dir, args.config)
     strict = bool(args.strict_config or (cfg.strict is True))
+
+    raw_target = args.target or cfg.target
+    if not raw_target:
+        raise RuntimeError('Missing required target argument. Provide it on the command line, or set build.target in config.')
+    target, implied_chips = _normalize_target_and_chips(raw_target)
 
     micropython_dir = os.path.abspath(args.micropython_dir or cfg.micropython_dir or _default_micropython_dir(project_dir))
     esp_idf_dir = os.path.abspath(args.esp_idf_dir or cfg.esp_idf_dir or _default_esp_idf_dir(project_dir))
@@ -430,6 +451,11 @@ def main(argv: list[str] | None = None) -> int:
     build_dir_name = args.build_dir or cfg.build_dir or 'build'
     build_dir = os.path.abspath(os.path.join(project_dir, build_dir_name))
     jobs = args.jobs if args.jobs is not None else (cfg.jobs or (os.cpu_count() or 1))
+
+    if target.lower() == 'esp32' and cfg.esp32_make_vars:
+        if not isinstance(cfg.esp32_make_vars, dict):
+            raise RuntimeError('esp32.make.vars must be a JSON object mapping make-var -> value')
+        passthrough = _apply_make_vars(passthrough, cfg.esp32_make_vars)
 
     if args.esp32_partition_auto is None:
         esp32_partition_auto = bool(cfg.esp32_partition_auto is True)
