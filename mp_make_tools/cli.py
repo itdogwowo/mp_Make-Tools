@@ -68,6 +68,50 @@ def _append_sdkconfig_defaults(cmake_file: str, sdkconfig_file: str) -> None:
     with open(cmake_file, 'w', encoding='utf-8') as f:
         f.write(data)
 
+def _ensure_esp32_idf_component_dependencies(port_dir: str, deps: dict[str, str]) -> bool:
+    manifest = os.path.join(port_dir, 'main', 'idf_component.yml')
+    if not deps or not os.path.exists(manifest):
+        return False
+
+    with open(manifest, 'r', encoding='utf-8') as f:
+        lines = f.read().splitlines()
+
+    idx = None
+    for i, line in enumerate(lines):
+        if line.strip() == 'dependencies:':
+            idx = i
+            break
+    if idx is None:
+        return False
+
+    existing: set[str] = set()
+    for line in lines:
+        m = re.match(r'^\s+([A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+)\s*:', line)
+        if m:
+            existing.add(m.group(1))
+
+    to_add: list[tuple[str, str]] = []
+    for k in sorted(deps.keys()):
+        v = deps.get(k)
+        if not isinstance(k, str) or not isinstance(v, str) or not k.strip() or not v.strip():
+            continue
+        if k in existing:
+            continue
+        to_add.append((k.strip(), v.strip()))
+
+    if not to_add:
+        return False
+
+    insert_at = idx + 1
+    new_lines = lines[:insert_at]
+    for k, v in to_add:
+        new_lines.append(f'  {k}: \"{v}\"')
+    new_lines.extend(lines[insert_at:])
+
+    with open(manifest, 'w', encoding='utf-8') as f:
+        f.write('\n'.join(new_lines) + '\n')
+    return True
+
 def _write_esp32_sdkconfig_fragment(path: str, *, flash_mb: int, partitions_csv: str) -> None:
     path = os.path.abspath(path)
     os.makedirs(os.path.dirname(path), exist_ok=True)
@@ -493,6 +537,13 @@ def main(argv: list[str] | None = None) -> int:
                 f'MicroPython checkout not found at {micropython_dir}. Run with --fetch or set --micropython-dir.'
             )
         raise RuntimeError(f'Unknown target or missing port directory: {port_dir}')
+
+    if target.lower() == 'esp32' and cfg.esp32_idf_component_dependencies:
+        if not isinstance(cfg.esp32_idf_component_dependencies, dict):
+            raise RuntimeError('esp32.idf_component.dependencies must be a JSON object mapping component -> version')
+        changed = _ensure_esp32_idf_component_dependencies(port_dir, cfg.esp32_idf_component_dependencies)
+        if changed:
+            print('INFO: Updated ports/esp32/main/idf_component.yml with extra dependencies from config.')
 
     if not (args.no_doctor or (cfg.no_doctor is True)):
         rc = doctor(target, install=bool(args.install))

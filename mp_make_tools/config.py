@@ -31,6 +31,7 @@ class MpConfig:
     esp32_partition_auto: bool | None = None
     esp32_flash_mb: int | None = None
     esp32_app_margin_kb: int | None = None
+    esp32_idf_component_dependencies: dict[str, str] | None = None
 
 
 def _deep_get(dct: dict, keys: list[str], default=None):
@@ -128,4 +129,5 @@ def load_config(project_dir: str, config_path: str | None) -> MpConfig:
         esp32_partition_auto=_deep_get(data, ['esp32', 'partition', 'auto']),
         esp32_flash_mb=_deep_get(data, ['esp32', 'partition', 'flash_mb']),
         esp32_app_margin_kb=_deep_get(data, ['esp32', 'partition', 'app_margin_kb']),
+        esp32_idf_component_dependencies=_deep_get(data, ['esp32', 'idf_component', 'dependencies']),
     )

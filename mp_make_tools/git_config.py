@@ -143,6 +143,37 @@ def _load_repos_list(data: dict) -> list[NamedRepoSpec] | None:
     return out or None
 
 
+def _load_implicit_named_repos(data: dict) -> list[NamedRepoSpec] | None:
+    reserved = {
+        'micropython',
+        'esp_idf',
+        'repos',
+        'tags_limit',
+        'list_wrap',
+        'write_detected_to',
+        'update_detected_on_fetch',
+    }
+
+    out: list[NamedRepoSpec] = []
+    for key, node in data.items():
+        if key in reserved or not isinstance(node, dict):
+            continue
+        dir_ = node.get('dir')
+        url = node.get('url')
+        if not dir_ or not url:
+            continue
+        out.append(
+            NamedRepoSpec(
+                name=str(key),
+                dir=str(dir_),
+                url=str(url),
+                ref=node.get('ref'),
+                recursive=bool(node.get('recursive') is True),
+            )
+        )
+    return out or None
+
+
 def load_git_config(project_dir: str, git_config_path: str | None) -> tuple[GitConfig, str | None]:
     project_dir = os.path.abspath(project_dir)
     path = resolve_git_config_path(project_dir, git_config_path)
@@ -157,6 +188,32 @@ def load_git_config(project_dir: str, git_config_path: str | None) -> tuple[GitC
     micropython = _load_repo_spec(data, 'micropython')
     esp_idf = _load_repo_spec(data, 'esp_idf')
     repos = _load_repos_list(data)
+    if repos is None:
+        implicit: list[NamedRepoSpec] = []
+        if micropython is not None:
+            implicit.append(
+                NamedRepoSpec(
+                    name='micropython',
+                    dir=micropython.dir,
+                    url=micropython.url,
+                    ref=micropython.ref,
+                    recursive=bool(micropython.recursive),
+                )
+            )
+        if esp_idf is not None:
+            implicit.append(
+                NamedRepoSpec(
+                    name='esp_idf',
+                    dir=esp_idf.dir,
+                    url=esp_idf.url,
+                    ref=esp_idf.ref,
+                    recursive=bool(esp_idf.recursive),
+                )
+            )
+        implicit_extra = _load_implicit_named_repos(data)
+        if implicit_extra:
+            implicit.extend(implicit_extra)
+        repos = implicit or None
     tags_limit = int(_deep_get(data, ['tags_limit'], 30) or 30)
     list_wrap = int(_deep_get(data, ['list_wrap'], 3) or 3)
     write_detected_to = _deep_get(data, ['write_detected_to'], 'config.json')

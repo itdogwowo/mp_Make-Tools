@@ -257,6 +257,11 @@ python3 /path/to/mp_Make-Tools/make.py --project-dir /path/to/firmware --name my
       "auto": true,
       "flash_mb": 4,
       "app_margin_kb": 0
+    },
+    "idf_component": {
+      "dependencies": {
+        "espressif/esp_new_jpeg": "^1.0.0"
+      }
     }
   }
 }
@@ -322,4 +327,3 @@ python3 /path/to/mp_Make-Tools/make.py --project-dir /path/to/firmware \
 ## 致謝 (Acknowledgements)
 
 本工具的設計靈感與部分編譯流程參考自 [lvgl_micropython](https://github.com/lvgl/lvgl_micropython) 以及官方 [MicroPython](https://github.com/micropython/micropython) 的建置生態，特此致謝。
-
