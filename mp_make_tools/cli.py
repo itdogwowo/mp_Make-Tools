@@ -279,6 +279,12 @@ def _user_c_modules_value(paths: list[str]) -> str:
         return uniq[0]
     return ';'.join(uniq)
 
+def _make_user_c_modules_arg(user_c_modules: str) -> str:
+    v = os.path.abspath(user_c_modules)
+    if ';' in v:
+        return f'USER_C_MODULES="{v}"'
+    return f'USER_C_MODULES={v}'
+
 def _check_config_mismatch(name: str, cfg_value, cli_value, *, strict: bool) -> None:
     if cfg_value is None or cli_value is None:
         return
@@ -646,7 +652,7 @@ def main(argv: list[str] | None = None) -> int:
     if not user_c_modules and exmods_resolved:
         user_c_modules = _user_c_modules_value(exmods_resolved)
     if user_c_modules:
-        make_args.append(f'USER_C_MODULES={os.path.abspath(user_c_modules)}')
+        make_args.append(_make_user_c_modules_arg(user_c_modules))
 
     make_args.extend(passthrough)
 
@@ -682,7 +688,7 @@ def main(argv: list[str] | None = None) -> int:
 
         make_args = [f'FROZEN_MANIFEST={out_manifest}']
         if user_c_modules:
-            make_args.append(f'USER_C_MODULES={os.path.abspath(user_c_modules)}')
+            make_args.append(_make_user_c_modules_arg(user_c_modules))
         make_args.extend(passthrough_esp32)
 
         initial_app_size = 0x100000

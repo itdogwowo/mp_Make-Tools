@@ -30,8 +30,8 @@
   ],
   "tags_limit": 30,
   "list_wrap": 3,
-  "write_detected_to": null,
-  "update_detected_on_fetch": false,
+  "write_detected_to": "config.json",
+  "update_detected_on_fetch": true,
   "require_clean": false,
   "strict_ref": false
 }

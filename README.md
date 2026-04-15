@@ -135,6 +135,15 @@ Git 相關操作（下載/同步 repo、列出 tag、把版本資訊寫回 confi
 - `require_clean`: true 時，若 repo 工作目錄有未提交變更會直接失敗（避免更新被 git 擋下卻沒注意）
 - `strict_ref`: true 時，ref 找不到或 checkout/submodule 失敗會直接失敗（避免只顯示 WARN）
 - `write_detected_to`: 寫回 `detected.*` 的目標檔案；設 `null` 代表不寫回
+- `update_detected_on_fetch`: true 時，執行 `--fetch/--sync` 後會自動寫回 `detected.*`；注意這只負責「記錄目前狀態」，不代表一定會切到最新
+
+「是否追最新」由各 repo 的 `ref` 決定：
+
+- `ref: "main"`（或其他分支名）：會嘗試跟到遠端該分支最新
+- `ref: "vX.Y.Z"` 或 commit hash：固定版本，不會自動追最新
+- `ref: null`：不強制 checkout 到特定 ref，只做既有 repo 的同步/偵測
+
+`force_reset` 不是更新最新的必要條件；只有在本地有未提交修改、導致 checkout 被 git 拒絕時才需要啟用。
 
 執行順序：
 
@@ -171,6 +180,20 @@ python3 git.py --sync
 
 - `exmod.root`：例如 `ext_mod`
 - `exmod.list`：例如 `\"/lcd_bus/micropython.cmake\"`、`\"/lcd_utils/micropython.cmake\"`
+
+例如：
+
+```json
+{
+  "exmod": {
+    "root": "ext_mod",
+    "list": [
+      "/mp_jpeg/micropython.cmake",
+      "/mp_heap_caps/micropython.cmake"
+    ]
+  }
+}
+```
 
 執行時會把它們組成 `USER_C_MODULES`（多個時用 `;` 串接）。你也可以用 CLI 逐一加入：
 
