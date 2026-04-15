@@ -12,6 +12,8 @@ class RepoSpec:
     url: str
     ref: str | None = None
     recursive: bool = False
+    enabled: bool = True
+    force_reset: bool = False
 
 
 @dataclass(frozen=True)
@@ -28,6 +30,8 @@ class GitConfig:
     list_wrap: int = 3
     write_detected_to: str | None = 'config.json'
     update_detected_on_fetch: bool = False
+    require_clean: bool = False
+    strict_ref: bool = False
 
 
 def _deep_get(dct: dict, keys: list[str], default=None):
@@ -114,6 +118,8 @@ def _load_repo_spec(data: dict, key: str) -> RepoSpec | None:
         url=str(url),
         ref=node.get('ref'),
         recursive=bool(node.get('recursive') is True),
+        enabled=bool(node.get('enabled') is not False),
+        force_reset=bool(node.get('force_reset') is True),
     )
 
 
@@ -138,6 +144,8 @@ def _load_repos_list(data: dict) -> list[NamedRepoSpec] | None:
                 url=str(url),
                 ref=item.get('ref'),
                 recursive=bool(item.get('recursive') is True),
+                enabled=bool(item.get('enabled') is not False),
+                force_reset=bool(item.get('force_reset') is True),
             )
         )
     return out or None
@@ -152,6 +160,8 @@ def _load_implicit_named_repos(data: dict) -> list[NamedRepoSpec] | None:
         'list_wrap',
         'write_detected_to',
         'update_detected_on_fetch',
+        'require_clean',
+        'strict_ref',
     }
 
     out: list[NamedRepoSpec] = []
@@ -169,6 +179,8 @@ def _load_implicit_named_repos(data: dict) -> list[NamedRepoSpec] | None:
                 url=str(url),
                 ref=node.get('ref'),
                 recursive=bool(node.get('recursive') is True),
+                enabled=bool(node.get('enabled') is not False),
+                force_reset=bool(node.get('force_reset') is True),
             )
         )
     return out or None
@@ -198,6 +210,8 @@ def load_git_config(project_dir: str, git_config_path: str | None) -> tuple[GitC
                     url=micropython.url,
                     ref=micropython.ref,
                     recursive=bool(micropython.recursive),
+                    enabled=bool(micropython.enabled),
+                    force_reset=bool(micropython.force_reset),
                 )
             )
         if esp_idf is not None:
@@ -208,6 +222,8 @@ def load_git_config(project_dir: str, git_config_path: str | None) -> tuple[GitC
                     url=esp_idf.url,
                     ref=esp_idf.ref,
                     recursive=bool(esp_idf.recursive),
+                    enabled=bool(esp_idf.enabled),
+                    force_reset=bool(esp_idf.force_reset),
                 )
             )
         implicit_extra = _load_implicit_named_repos(data)
@@ -218,6 +234,8 @@ def load_git_config(project_dir: str, git_config_path: str | None) -> tuple[GitC
     list_wrap = int(_deep_get(data, ['list_wrap'], 3) or 3)
     write_detected_to = _deep_get(data, ['write_detected_to'], 'config.json')
     update_detected_on_fetch = bool(_deep_get(data, ['update_detected_on_fetch'], False) is True)
+    require_clean = bool(_deep_get(data, ['require_clean'], False) is True)
+    strict_ref = bool(_deep_get(data, ['strict_ref'], False) is True)
 
     return (
         GitConfig(
@@ -228,6 +246,8 @@ def load_git_config(project_dir: str, git_config_path: str | None) -> tuple[GitC
             list_wrap=list_wrap,
             write_detected_to=write_detected_to,
             update_detected_on_fetch=update_detected_on_fetch,
+            require_clean=require_clean,
+            strict_ref=strict_ref,
         ),
         path,
     )

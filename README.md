@@ -75,22 +75,23 @@ python3 /path/to/mp_Make-Tools/make.py --project-dir /path/to/firmware --manifes
 
 ### git_manage
 
-如果你希望把「repo 來源/版本（tag/ref）」集中管理在 `git_config.json`，可以在 `make_config.json` 設定：
+如果你希望把「repo 來源/版本（tag/ref）」集中管理在 git 設定檔，可以在 `make_config.json` 設定：
 
 - `git_manage`: `"git_config.json"`
 
-此時 `make.py` 每次執行都會先跑一次 git manager（依 git_config 下載/同步 repo、checkout 到指定 ref、更新 submodules、收集 tags/branch 資訊），再開始 build。
+此時 `make.py` 每次執行都會先跑一次 git manager（依 git 設定檔下載/同步 repo、checkout 到指定 ref、更新 submodules、收集 tags/branch 資訊），再開始 build。
 
-`make.py` 會優先從 `git_config.json` 取得：
+`make.py` 會優先從 git 設定檔取得：
 
-- `micropython.dir/url/ref`
-- `esp_idf.dir/url/ref`（會對應到 build 端的 `esp_idf.version`）
+- `micropython` 對應 repo 的 `dir/url/ref`
+- `esp_idf` 對應 repo 的 `dir/url/ref`（會對應到 build 端的 `esp_idf.version`）
 
 CLI 參數仍然具有最高優先權。
 
 ### Git 設定檔（git_config.json）
 
-Git 相關操作（下載/同步 repo、列出 tag、把版本資訊寫回 config）已獨立成 `git.py`，並使用另一份設定檔：
+Git 相關操作（下載/同步 repo、列出 tag、把版本資訊寫回 config）已獨立成 `git.py`。
+設定檔支援以下檔名（依序尋找）：
 
 - `mp_make_tools.git_config.json`
 - `mp_make_tools.git.json`
@@ -101,9 +102,56 @@ Git 相關操作（下載/同步 repo、列出 tag、把版本資訊寫回 confi
 
 第一次執行時，如果完全找不到任何 git 設定檔，工具會自動從 `git_config.example.json` 複製一份到 `project-dir/git_config.json` 讓你直接修改。
 
-`git_config.json` 也可以設定 detected 檔案裡清單的排版方式：
+建議使用 `repos` 清單格式（可同時管理多個 repo）：
+
+```json
+{
+  "repos": [
+    {
+      "name": "mp_Make-Tools",
+      "enabled": true,
+      "force_reset": false,
+      "dir": ".",
+      "url": "https://github.com/itdogwowo/mp_Make-Tools.git",
+      "ref": "main",
+      "recursive": false
+    }
+  ],
+  "tags_limit": 30,
+  "list_wrap": 3,
+  "write_detected_to": null,
+  "update_detected_on_fetch": false,
+  "require_clean": false,
+  "strict_ref": false
+}
+```
+
+欄位說明：
 
 - `list_wrap`: 每行顯示幾個項目（例如 tags/branches；預設 3）
+- `repos[].enabled`: 是否啟用此 repo（預設 true；可用來暫時關閉某些 repo）
+- `repos[].force_reset`: true 時，會丟棄 repo 內所有未提交變更並刪除未追蹤檔案/資料夾（`git reset --hard` + `git clean -fd`）；完成後會自動把該 repo 的 `force_reset` 寫回 `false`（一次性）
+- `repos[].recursive`: 是否同步 submodules（`true` 會做 `submodule update --init --recursive`）
+- `require_clean`: true 時，若 repo 工作目錄有未提交變更會直接失敗（避免更新被 git 擋下卻沒注意）
+- `strict_ref`: true 時，ref 找不到或 checkout/submodule 失敗會直接失敗（避免只顯示 WARN）
+- `write_detected_to`: 寫回 `detected.*` 的目標檔案；設 `null` 代表不寫回
+
+執行順序：
+
+- `repos` 中 `dir="."` 的項目會自動優先處理（即使不在陣列第一個）
+- 其他 repo 依清單順序處理
+
+### mp_Make-Tools 自我更新（跟到 main 最新）
+
+`git.py` 可用 `repos` 清單同步任意 repo（包含 mp_Make-Tools 自己）。只要把目標 repo 設為 `dir="."` 與 `ref="main"`，就能把本 repo 同步到 `origin/main` 最新。
+
+在 mp_Make-Tools repo 根目錄執行：
+
+```bash
+python3 git.py --sync
+```
+
+注意：如果工作目錄有未提交變更、或本地分支 checkout 需要覆蓋檔案，git 可能會拒絕切換/更新；這種情況需要你先 commit/stash/清乾淨再同步。
 
 ### 參數一致性檢查
 
@@ -114,8 +162,8 @@ Git 相關操作（下載/同步 repo、列出 tag、把版本資訊寫回 confi
 
 ### 版本固定（MicroPython / ESP-IDF）
 
-- MicroPython：可用 `micropython.ref`（或 `--micropython-ref`）固定到 tag/branch/commit。\n  若與現況不一致會 WARN；配合 `--sync` 或 `--fetch` 可自動 checkout。
-- ESP-IDF：可用 `esp_idf.version`（或 `--esp-idf-version`）固定到 tag/branch/commit。\n  ESP-IDF 需要遞迴 submodule，本工具在 `--fetch/--sync` 時會自動 `--recursive`。
+- MicroPython：可用 `repos` 裡 `name="micropython"` 的 `ref`（或 `--micropython-ref`）固定到 tag/branch/commit。若與現況不一致會 WARN；配合 `--sync` 或 `--fetch` 可自動 checkout。
+- ESP-IDF：可用 `repos` 裡 `name="esp_idf"` 的 `ref`（或 `--esp-idf-version`）固定到 tag/branch/commit。ESP-IDF 通常需要 `recursive=true` 以同步 submodules。
 
 ### exmod（USER_C_MODULES）
 

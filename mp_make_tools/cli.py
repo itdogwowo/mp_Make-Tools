@@ -432,13 +432,32 @@ def main(argv: list[str] | None = None) -> int:
         )
         micropython_dir = os.path.abspath(repo_dirs.get('micropython', micropython_dir))
         esp_idf_dir = os.path.abspath(repo_dirs.get('esp_idf', esp_idf_dir))
-        if args.micropython_ref is None and cfg.micropython_ref is None and git_cfg.micropython and git_cfg.micropython.ref:
-            micropython_ref = git_cfg.micropython.ref
+
+        git_micropython_ref = None
+        if git_cfg.micropython and git_cfg.micropython.ref:
+            git_micropython_ref = git_cfg.micropython.ref
+        elif git_cfg.repos:
+            for spec in git_cfg.repos:
+                if spec.name == 'micropython' and spec.ref:
+                    git_micropython_ref = spec.ref
+                    break
+
+        if args.micropython_ref is None and cfg.micropython_ref is None and git_micropython_ref:
+            micropython_ref = git_micropython_ref
         else:
             micropython_ref = args.micropython_ref or cfg.micropython_ref
 
-        if args.esp_idf_version is None and cfg.esp_idf_version is None and git_cfg.esp_idf and git_cfg.esp_idf.ref:
-            esp_idf_version = git_cfg.esp_idf.ref
+        git_esp_idf_ref = None
+        if git_cfg.esp_idf and git_cfg.esp_idf.ref:
+            git_esp_idf_ref = git_cfg.esp_idf.ref
+        elif git_cfg.repos:
+            for spec in git_cfg.repos:
+                if spec.name == 'esp_idf' and spec.ref:
+                    git_esp_idf_ref = spec.ref
+                    break
+
+        if args.esp_idf_version is None and cfg.esp_idf_version is None and git_esp_idf_ref:
+            esp_idf_version = git_esp_idf_ref
         else:
             esp_idf_version = args.esp_idf_version or cfg.esp_idf_version or 'v5.5.1'
         should_fetch = False
@@ -493,6 +512,13 @@ def main(argv: list[str] | None = None) -> int:
         if _is_within_dir(micropython_dir, project_dir):
             should_fetch = True
         else:
+            toolish = os.path.exists(os.path.join(project_dir, 'mp_make_tools')) and os.path.exists(os.path.join(project_dir, 'make.py'))
+            if toolish:
+                raise RuntimeError(
+                    f'MicroPython checkout not found at {micropython_dir}. '
+                    f'It looks like project-dir is set to the mp_Make-Tools repo. '
+                    f'Run make.py with --project-dir pointing to your firmware repo, or run git.py to update mp_Make-Tools itself.'
+                )
             raise RuntimeError(f'MicroPython checkout not found at {micropython_dir}. Run with --fetch or set --micropython-dir.')
     if target.lower() == 'esp32' and not should_fetch and not os.path.exists(esp_idf_dir):
         if _is_within_dir(esp_idf_dir, project_dir):
@@ -504,8 +530,18 @@ def main(argv: list[str] | None = None) -> int:
         if cfg.git_manage and not args.no_git_manage:
             ensure_managed_repos(project_dir=project_dir, git_config_path=cfg.git_manage, allow_network=True)
             should_fetch = False
-
-        pass
+            if not os.path.exists(micropython_dir):
+                raise RuntimeError(
+                    f'MicroPython checkout not found at {micropython_dir}. '
+                    f'git_manage is enabled but git_config did not fetch it. '
+                    f'Enable the micropython repo in your git_config (repos[].enabled=true), or disable git_manage and use --fetch.'
+                )
+            if target.lower() == 'esp32' and not os.path.exists(esp_idf_dir):
+                raise RuntimeError(
+                    f'ESP-IDF checkout not found at {esp_idf_dir}. '
+                    f'git_manage is enabled but git_config did not fetch it. '
+                    f'Enable the esp_idf repo in your git_config (repos[].enabled=true), or disable git_manage and use --fetch.'
+                )
 
     if os.path.exists(micropython_dir) and os.path.exists(os.path.join(micropython_dir, '.gitmodules')):
         rc = run(['git', '-c', 'fetch.recurseSubmodules=no', 'submodule', 'update', '--init', '--recursive'], cwd=micropython_dir, env=None)

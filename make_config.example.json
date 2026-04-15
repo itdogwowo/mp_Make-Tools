@@ -1,7 +1,6 @@
 {
   "git_manage": "git_config.json",
   "esp_idf": {
-    "chips": "esp32",
     "no_export": false
   },
   "build": {

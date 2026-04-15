@@ -1,18 +1,37 @@
 {
-  "micropython": {
-    "dir": "lib/micropython",
-    "url": "https://github.com/micropython/micropython",
-    "ref": null,
-    "recursive": true
-  },
-  "esp_idf": {
-    "dir": "lib/esp-idf",
-    "url": "https://github.com/espressif/esp-idf",
-    "ref": "v5.5.1",
-    "recursive": true
-  },
+  "repos": [
+    {
+      "name": "mp_Make-Tools",
+      "enabled": true,
+      "force_reset": false,
+      "dir": ".",
+      "url": "https://github.com/itdogwowo/mp_Make-Tools.git",
+      "ref": "main",
+      "recursive": false
+    },
+    {
+      "name": "micropython",
+      "enabled": true,
+      "force_reset": false,
+      "dir": "lib/micropython",
+      "url": "https://github.com/micropython/micropython",
+      "ref": null,
+      "recursive": true
+    },
+    {
+      "name": "esp_idf",
+      "enabled": true,
+      "force_reset": false,
+      "dir": "lib/esp-idf",
+      "url": "https://github.com/espressif/esp-idf",
+      "ref": "v5.5.1",
+      "recursive": true
+    }
+  ],
   "tags_limit": 30,
   "list_wrap": 3,
-  "write_detected_to": "config.json",
-  "update_detected_on_fetch": false
+  "write_detected_to": null,
+  "update_detected_on_fetch": false,
+  "require_clean": false,
+  "strict_ref": false
 }

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import os
+import json
 from dataclasses import dataclass
 from datetime import datetime
 
@@ -40,13 +41,16 @@ def _specs_from_git_config(cfg: GitConfig) -> list[tuple[str, RepoSpec]]:
     specs: list[tuple[str, RepoSpec]] = []
     if cfg.repos:
         for spec in cfg.repos:
-            specs.append((spec.name, spec))
+            if spec.enabled:
+                specs.append((spec.name, spec))
         return specs
 
     if cfg.micropython:
-        specs.append(('micropython', cfg.micropython))
+        if cfg.micropython.enabled:
+            specs.append(('micropython', cfg.micropython))
     if cfg.esp_idf:
-        specs.append(('esp_idf', cfg.esp_idf))
+        if cfg.esp_idf.enabled:
+            specs.append(('esp_idf', cfg.esp_idf))
     return specs
 
 
@@ -79,8 +83,12 @@ def ensure_managed_repos(
 
     repo_dirs: dict[str, str] = {}
     detected: dict[str, RepoDetected] = {}
+    oneshot_force_reset: list[tuple[str, str]] = []
 
-    for repo_name, spec in _specs_from_git_config(cfg):
+    specs = _specs_from_git_config(cfg)
+    specs.sort(key=lambda it: (0 if os.path.abspath(_resolve_path(project_dir, it[1].dir)) == project_dir else 1))
+
+    for repo_name, spec in specs:
         repo_dir = _resolve_path(project_dir, spec.dir)
         repo_dirs[repo_name] = repo_dir
 
@@ -95,7 +103,16 @@ def ensure_managed_repos(
                     depth=1,
                 )
 
-            ensure_repo_ref(repo_dir, ref=spec.ref, recursive=bool(spec.recursive))
+            ensure_repo_ref(
+                repo_dir,
+                ref=spec.ref,
+                recursive=bool(spec.recursive),
+                require_clean=cfg.require_clean,
+                strict_ref=cfg.strict_ref,
+                force_reset=bool(spec.force_reset),
+            )
+            if spec.force_reset:
+                oneshot_force_reset.append((repo_name, spec.dir))
 
         if os.path.exists(repo_dir):
             detected[repo_name] = _detect(repo_name, repo_dir, tags_limit=cfg.tags_limit, cwd=project_dir)
@@ -118,5 +135,32 @@ def ensure_managed_repos(
         if not os.path.isabs(out_path):
             out_path = os.path.join(project_dir, out_path)
         update_json_file(out_path, updates, list_wrap=cfg.list_wrap)
+
+    if cfg_path and oneshot_force_reset:
+        with open(cfg_path, 'r', encoding='utf-8') as f:
+            data = json.load(f)
+            if not isinstance(data, dict):
+                data = {}
+        repos = data.get('repos')
+        if isinstance(repos, list):
+            changed = False
+            for item in repos:
+                if not isinstance(item, dict):
+                    continue
+                name = str(item.get('name') or '').strip()
+                dir_ = item.get('dir')
+                if not isinstance(dir_, str):
+                    continue
+                for target_name, target_dir in oneshot_force_reset:
+                    if name == target_name and dir_ == target_dir and item.get('force_reset') is True:
+                        item['force_reset'] = False
+                        changed = True
+            if changed:
+                update_json_file(cfg_path, [(['repos'], repos)], list_wrap=cfg.list_wrap)
+        else:
+            for target_name, _ in oneshot_force_reset:
+                node = data.get(target_name)
+                if isinstance(node, dict) and node.get('force_reset') is True:
+                    update_json_file(cfg_path, [([target_name, 'force_reset'], False)], list_wrap=cfg.list_wrap)
 
     return cfg, cfg_path, repo_dirs, detected

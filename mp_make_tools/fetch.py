@@ -63,10 +63,42 @@ def ensure_submodule_or_clone(
     return dest
 
 
-def ensure_repo_ref(dest: str, *, ref: str | None, recursive: bool) -> None:
+def ensure_repo_ref(
+    dest: str,
+    *,
+    ref: str | None,
+    recursive: bool,
+    require_clean: bool = False,
+    strict_ref: bool = False,
+    force_reset: bool = False,
+) -> None:
     dest = os.path.abspath(dest)
     if not os.path.exists(dest):
         return
+
+    def _clean_untracked() -> None:
+        rc = run(['git', '-C', dest, 'clean', '-fd'], cwd=dest)
+        if strict_ref and rc != 0:
+            raise RuntimeError(f'Failed to git clean in: {dest}')
+
+    if force_reset:
+        rc = run(['git', '-C', dest, 'reset', '--hard'], cwd=dest)
+        if strict_ref and rc != 0:
+            raise RuntimeError(f'Failed to git reset --hard in: {dest}')
+        _clean_untracked()
+
+    if require_clean and not force_reset:
+        proc = subprocess.run(
+            ['git', '-C', dest, 'status', '--porcelain'],
+            cwd=dest,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.DEVNULL,
+            text=True,
+        )
+        if proc.returncode != 0:
+            raise RuntimeError(f'Failed to check git status in: {dest}')
+        if (proc.stdout or '').strip():
+            raise RuntimeError(f'Git worktree not clean: {dest}')
 
     def _ref_exists(r: str) -> bool:
         proc = subprocess.run(
@@ -95,11 +127,36 @@ def ensure_repo_ref(dest: str, *, ref: str | None, recursive: bool) -> None:
 
         if remote_branch_ref is not None:
             local_branch = ref[len('origin/') :] if ref.startswith('origin/') else ref
-            run(['git', '-C', dest, 'checkout', '-B', local_branch, remote_branch_ref], cwd=dest)
+            rc = run(['git', '-C', dest, 'checkout', '-B', local_branch, remote_branch_ref], cwd=dest)
+            if strict_ref and rc != 0:
+                raise RuntimeError(f'Failed to checkout branch ref {ref} in: {dest}')
+            if force_reset:
+                rc = run(['git', '-C', dest, 'reset', '--hard', remote_branch_ref], cwd=dest)
+                if strict_ref and rc != 0:
+                    raise RuntimeError(f'Failed to reset to {remote_branch_ref} in: {dest}')
+                _clean_untracked()
         elif _ref_exists(ref):
-            run(['git', '-C', dest, 'checkout', ref], cwd=dest)
+            rc = run(['git', '-C', dest, 'checkout', ref], cwd=dest)
+            if strict_ref and rc != 0:
+                raise RuntimeError(f'Failed to checkout ref {ref} in: {dest}')
+            if force_reset:
+                rc = run(['git', '-C', dest, 'reset', '--hard', ref], cwd=dest)
+                if strict_ref and rc != 0:
+                    raise RuntimeError(f'Failed to reset to {ref} in: {dest}')
+                _clean_untracked()
         else:
+            if strict_ref:
+                raise RuntimeError(f'Ref not found in {dest}: {ref}')
             print(f'WARN: ref not found in {dest}: {ref}')
 
     if recursive:
-        run(['git', '-C', dest, 'submodule', 'update', '--init', '--recursive'], cwd=dest)
+        rc = run(['git', '-C', dest, 'submodule', 'update', '--init', '--recursive'], cwd=dest)
+        if strict_ref and rc != 0:
+            raise RuntimeError(f'Failed to update submodules in: {dest}')
+        if force_reset:
+            rc = run(['git', '-C', dest, 'submodule', 'foreach', '--recursive', 'git reset --hard'], cwd=dest)
+            if strict_ref and rc != 0:
+                raise RuntimeError(f'Failed to reset submodules in: {dest}')
+            rc = run(['git', '-C', dest, 'submodule', 'foreach', '--recursive', 'git clean -fd'], cwd=dest)
+            if strict_ref and rc != 0:
+                raise RuntimeError(f'Failed to clean submodules in: {dest}')
