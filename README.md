@@ -335,8 +335,7 @@ python3 /path/to/mp_Make-Tools/make.py --project-dir /path/to/firmware --no-doct
 
 ESP32 建置成功後，工具會自動把 `firmware.bin` 改名複製到你的專案 `build/` 目錄下：
 
-- 預設檔名：等同 `target` 參數（例如 `esp32s3` 會輸出 `build/esp32s3.bin`）
-- `--name <name>`：指定輸出檔名（優先於其他）
+- 預設檔名（由高到低）：`--name` → 設定檔 `output.name` → `BOARD[_BOARD_VARIANT]` → `target` → `firmware`
  - 若檔名重複：自動加上 `_YYYY_MM_DD_HH_MM_SS` 避免覆蓋（例如 `esp32s3_2026_04_01_12_30_45.bin`）
 
 範例：

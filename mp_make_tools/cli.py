@@ -16,6 +16,35 @@ def _safe_output_stem(name: str) -> str:
         return 'firmware'
     return re.sub(r'[^A-Za-z0-9._-]+', '_', name)
 
+def _default_esp32_output_name(passthrough: list[str], *, build_name: str | None) -> str | None:
+    if build_name:
+        bn = build_name.strip()
+        if bn.startswith('build-'):
+            rest = bn[len('build-'):].strip()
+            if rest:
+                if '-' in rest:
+                    a, b = rest.split('-', 1)
+                    a = a.strip()
+                    b = b.strip()
+                    if a and b:
+                        return f'{a}_{b}'
+                    if a:
+                        return a
+                return rest
+
+    mv = _extract_make_vars(passthrough)
+    board_variant = (mv.get('BOARD_VARIANT') or '').strip()
+    board = (mv.get('BOARD') or '').strip()
+    if not board:
+        board_dir = (mv.get('BOARD_DIR') or '').strip()
+        if board_dir:
+            board = os.path.basename(os.path.normpath(board_dir)).strip()
+    if not board:
+        return None
+    if board_variant:
+        return f'{board}_{board_variant}'
+    return board
+
 
 def _find_esp32_firmware_bin(port_dir: str) -> str | None:
     candidates: list[str] = []
@@ -664,6 +693,7 @@ def main(argv: list[str] | None = None) -> int:
 
     use_idf_export = is_esp32 and os.path.exists(export_sh) and (args.idf_export or (not no_idf_export))
     should_clean = not bool(args.no_clean or (cfg.no_clean is True))
+    build_name_for_output: str | None = None
 
     def run_make(cmd: list[str]) -> int:
         if use_idf_export:
@@ -685,6 +715,7 @@ def main(argv: list[str] | None = None) -> int:
             passthrough=passthrough,
             flash_mb=esp32_flash_mb,
         )
+        build_name_for_output = build_name
 
         make_args = [f'FROZEN_MANIFEST={out_manifest}']
         if user_c_modules:
@@ -725,7 +756,8 @@ def main(argv: list[str] | None = None) -> int:
         if src_bin is None:
             print('WARN: build succeeded but firmware.bin was not found under the port build directory.')
         else:
-            stem = _safe_output_stem(args.name or cfg.name or raw_target)
+            default_name = _default_esp32_output_name(passthrough, build_name=build_name_for_output)
+            stem = _safe_output_stem(args.name or cfg.name or default_name or raw_target)
             dst_bin = _unique_path(os.path.join(build_dir, f'{stem}.bin'))
             shutil.copy2(src_bin, dst_bin)
             print('Output: ' + dst_bin)
