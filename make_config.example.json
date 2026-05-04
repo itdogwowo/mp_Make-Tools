@@ -28,6 +28,7 @@
       }
     },
     "make": {
+      "_comment": "C5_WIFI,SPIRAM_OCT",
       "vars": {
         "BOARD": "ESP32_GENERIC_S3",
         "BOARD_VARIANT": "SPIRAM_OCT"
