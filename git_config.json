@@ -1,0 +1,48 @@
+{
+  "micropython": {
+    "dir": "lib/micropython",
+    "url": "https://github.com/micropython/micropython",
+    "ref": "v1.29.0-preview",
+    "recursive": true
+  },
+  "esp_idf": {
+    "dir": "lib/esp-idf",
+    "url": "https://github.com/espressif/esp-idf",
+    "ref": "v5.5.1",
+    "recursive": true
+  },
+  "mp_jpeg": {
+    "dir": "ext_mod/mp_jpeg",
+    "url": "https://github.com/itdogwowo/mp_jpeg",
+    "ref": "master",
+    "recursive": true
+  },
+  "mp_heap_caps": {
+    "dir": "ext_mod/mp_heap_caps",
+    "url": "https://github.com/itdogwowo/mp_heap_caps.git",
+    "ref": "main",
+    "recursive": true
+  },
+  "mp_lcd_bus": {
+    "dir": "ext_mod/mp_lcd_bus",
+    "url": "https://github.com/itdogwowo/mp_lcd_bus.git",
+    "ref": "main",
+    "recursive": true
+  },
+  "mp_hub75": {
+    "dir": "ext_mod/mp_hub75",
+    "url": "https://github.com/itdogwowo/mp_hub75.git",
+    "ref": "main",
+    "recursive": true
+  },
+  "lv_binding": {
+    "dir": "ext_mod/lv_binding_micropython",
+    "url": "https://github.com/lvgl/lv_binding_micropython.git",
+    "ref": "master",
+    "recursive": true
+  },
+  "tags_limit": 30,
+  "list_wrap": 3,
+  "write_detected_to": "config.json",
+  "update_detected_on_fetch": false
+}

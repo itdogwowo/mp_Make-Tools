@@ -109,9 +109,15 @@ def ensure_repo_ref(
         )
         return int(proc.returncode) == 0
 
+    # ══════════════════════════════════════════════════════════════
+    # 指定 ref 就「每次執行都追該 ref 的最新」：
+    #   - ref 是分支（main/master/...）→ 每次 fetch + checkout -B + reset --hard origin/<ref>
+    #   - ref 是 tag / commit hash     → 固定點，每次 reset --hard 到該點
+    #   - 本地未提交變更與未追蹤檔案 每次都被剷除（方便重新拉最新）
+    # （不再只「當 ref 不存在才 fetch」——本地分支存在後也照常更新）
+    # ══════════════════════════════════════════════════════════════
     if ref:
-        if not _ref_exists(ref):
-            run(['git', '-c', 'fetch.recurseSubmodules=no', '-C', dest, 'fetch', '--tags'], cwd=dest)
+        run(['git', '-c', 'fetch.recurseSubmodules=no', '-C', dest, 'fetch', '--tags'], cwd=dest)
         if not _ref_exists(ref):
             run(['git', '-c', 'fetch.recurseSubmodules=no', '-C', dest, 'fetch', '--depth=1', 'origin', ref], cwd=dest)
 
@@ -126,24 +132,24 @@ def ensure_repo_ref(
                 remote_branch_ref = ref
 
         if remote_branch_ref is not None:
+            # ── 分支：追遠端最新 ──
             local_branch = ref[len('origin/') :] if ref.startswith('origin/') else ref
             rc = run(['git', '-C', dest, 'checkout', '-B', local_branch, remote_branch_ref], cwd=dest)
             if strict_ref and rc != 0:
                 raise RuntimeError(f'Failed to checkout branch ref {ref} in: {dest}')
-            if force_reset:
-                rc = run(['git', '-C', dest, 'reset', '--hard', remote_branch_ref], cwd=dest)
-                if strict_ref and rc != 0:
-                    raise RuntimeError(f'Failed to reset to {remote_branch_ref} in: {dest}')
-                _clean_untracked()
+            rc = run(['git', '-C', dest, 'reset', '--hard', remote_branch_ref], cwd=dest)
+            if strict_ref and rc != 0:
+                raise RuntimeError(f'Failed to reset to {remote_branch_ref} in: {dest}')
+            _clean_untracked()
         elif _ref_exists(ref):
+            # ── tag / commit：固定點，reset 到該點 ──
             rc = run(['git', '-C', dest, 'checkout', ref], cwd=dest)
             if strict_ref and rc != 0:
                 raise RuntimeError(f'Failed to checkout ref {ref} in: {dest}')
-            if force_reset:
-                rc = run(['git', '-C', dest, 'reset', '--hard', ref], cwd=dest)
-                if strict_ref and rc != 0:
-                    raise RuntimeError(f'Failed to reset to {ref} in: {dest}')
-                _clean_untracked()
+            rc = run(['git', '-C', dest, 'reset', '--hard', ref], cwd=dest)
+            if strict_ref and rc != 0:
+                raise RuntimeError(f'Failed to reset to {ref} in: {dest}')
+            _clean_untracked()
         else:
             if strict_ref:
                 raise RuntimeError(f'Ref not found in {dest}: {ref}')
@@ -153,7 +159,8 @@ def ensure_repo_ref(
         rc = run(['git', '-C', dest, 'submodule', 'update', '--init', '--recursive'], cwd=dest)
         if strict_ref and rc != 0:
             raise RuntimeError(f'Failed to update submodules in: {dest}')
-        if force_reset:
+        if ref:
+            # 有 ref 才同步 submodule 到最新（避免動到無 ref repo 的 submodule）
             rc = run(['git', '-C', dest, 'submodule', 'foreach', '--recursive', 'git reset --hard'], cwd=dest)
             if strict_ref and rc != 0:
                 raise RuntimeError(f'Failed to reset submodules in: {dest}')

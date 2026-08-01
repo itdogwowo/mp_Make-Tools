@@ -139,11 +139,13 @@ Git 相關操作（下載/同步 repo、列出 tag、把版本資訊寫回 confi
 
 「是否追最新」由各 repo 的 `ref` 決定：
 
-- `ref: "main"`（或其他分支名）：會嘗試跟到遠端該分支最新
-- `ref: "vX.Y.Z"` 或 commit hash：固定版本，不會自動追最新
+- `ref: "main"`（或其他分支名）：**每次執行都會 fetch 遠端並硬 reset 到該分支最新**（本地未提交變更與未追蹤檔案會被剷除）
+- `ref: "vX.Y.Z"` 或 commit hash：固定版本，每次執行 fetch 後 reset 到該固定點（等於鎖版本，可輸入 commit 唯一 ID 精確固定）
 - `ref: null`：不強制 checkout 到特定 ref，只做既有 repo 的同步/偵測
 
-`force_reset` 不是更新最新的必要條件；只有在本地有未提交修改、導致 checkout 被 git 拒絕時才需要啟用。
+> 有指定 `ref`（分支或 tag/commit）的 repo，每次執行都會硬 reset 到該 ref 的最新狀態，方便每次重新拉最新。要固定版本就選 tag 或直接填 commit hash。
+
+`force_reset` 不是更新最新的必要條件；只有在本地有未提交修改、導致 checkout 被 git 拒絕時才需要啟用（一次性，用完自動寫回 false）。
 
 執行順序：
 

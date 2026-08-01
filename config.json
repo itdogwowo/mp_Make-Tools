@@ -1,0 +1,106 @@
+{
+  "detected": {
+    "timestamp_utc": "2026-08-01T07:42:26Z",
+    "micropython": {
+      "dir": "/Users/user/Documents/code/git/mp_Make-Tools/lib/micropython",
+      "head": "367178fce7a7513862b15f940afa75ba005ba67b",
+      "describe": "v1.29.0-preview",
+      "branch": null,
+      "tags_at_head": [
+        "v1.29.0-preview"
+      ],
+      "recent_tags": [
+        "v1.29.0-preview", "v1.28.0", "v1.28.0-preview",
+        "v1.27.0", "v1.26.1", "v1.27.0-preview",
+        "v1.26.0", "v1.26.0-preview", "v1.25.0",
+        "v1.24.1", "v1.25.0-preview", "v1.24.0",
+        "v1.24.0-preview", "v1.23.0", "v1.22.2",
+        "v1.22.1", "v1.23.0-preview", "v1.22.0",
+        "v1.22.0-preview", "v1.21.0", "v1.20.0",
+        "v1.19.1", "v1.19", "v1.18",
+        "v1.17", "v1.16", "v1.15",
+        "v1.14", "v1.13", "v1.12"
+      ],
+      "recent_remote_branches": [
+        "origin", "origin/master"
+      ]
+    },
+    "esp_idf": {
+      "dir": "/Users/user/Documents/code/git/mp_Make-Tools/lib/esp-idf",
+      "head": "fcae32885b0296b32044cb99ecbdc50d98dddb83",
+      "describe": "v5.5.1",
+      "branch": null,
+      "tags_at_head": [
+        "v5.5.1"
+      ],
+      "recent_tags": [
+        "v5.5.5", "v6.1-beta1", "v6.0.2",
+        "v5.2.7", "v6.0.1", "v5.4.4",
+        "v5.5.4", "v5.3.5", "v6.0",
+        "v6.0-rc1", "v5.5.3", "v6.0-beta2",
+        "v5.1.7", "v5.5.2", "v6.0-beta1",
+        "v6.1-dev", "v5.4.3", "v5.2.6",
+        "v5.5.1", "v5.3.4", "v5.5",
+        "v5.5-rc1", "v5.4.2", "v5.5-beta1",
+        "v5.0.9", "v6.0-dev", "v5.3.3",
+        "v5.4.1", "v5.2.5", "v5.2.4"
+      ],
+      "recent_remote_branches": []
+    },
+    "mp_jpeg": {
+      "dir": "/Users/user/Documents/code/git/mp_Make-Tools/ext_mod/mp_jpeg",
+      "head": "c2799bef233b9eb06cf61d518056d8a14510f025",
+      "describe": "c2799be",
+      "branch": "master",
+      "tags_at_head": [],
+      "recent_tags": [],
+      "recent_remote_branches": [
+        "origin", "origin/master"
+      ]
+    },
+    "mp_heap_caps": {
+      "dir": "/Users/user/Documents/code/git/mp_Make-Tools/ext_mod/mp_heap_caps",
+      "head": "de243b4f6cc27322e9fc1ae4e8b5950bf6cbd532",
+      "describe": "de243b4",
+      "branch": "main",
+      "tags_at_head": [],
+      "recent_tags": [],
+      "recent_remote_branches": [
+        "origin", "origin/main"
+      ]
+    },
+    "mp_lcd_bus": {
+      "dir": "/Users/user/Documents/code/git/mp_Make-Tools/ext_mod/mp_lcd_bus",
+      "head": "ec1fba0a1ba62342b15fc7a56aab8df656f405be",
+      "describe": "ec1fba0",
+      "branch": "main",
+      "tags_at_head": [],
+      "recent_tags": [],
+      "recent_remote_branches": [
+        "origin", "origin/main"
+      ]
+    },
+    "mp_hub75": {
+      "dir": "/Users/user/Documents/code/git/mp_Make-Tools/ext_mod/mp_hub75",
+      "head": "6af98adf0dc986aa8249f7f4dd3b370989706f25",
+      "describe": "6af98ad",
+      "branch": "main",
+      "tags_at_head": [],
+      "recent_tags": [],
+      "recent_remote_branches": [
+        "origin", "origin/main"
+      ]
+    },
+    "lv_binding": {
+      "dir": "/Users/user/Documents/code/git/mp_Make-Tools/ext_mod/lv_binding_micropython",
+      "head": "ac5d06c7d76b0f9e3ee76585bad1ba81c6744a72",
+      "describe": "ac5d06c",
+      "branch": "master",
+      "tags_at_head": [],
+      "recent_tags": [],
+      "recent_remote_branches": [
+        "origin", "origin/master"
+      ]
+    }
+  }
+}
