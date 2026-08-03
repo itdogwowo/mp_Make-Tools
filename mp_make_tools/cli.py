@@ -160,7 +160,37 @@ def _ensure_esp32_idf_component_dependencies(port_dir: str, deps: dict[str, str]
         f.write('\n'.join(new_lines) + '\n')
     return True
 
-def _write_esp32_sdkconfig_fragment(path: str, *, flash_mb: int, partitions_csv: str) -> None:
+def _collect_module_sdkconfig(module_paths: list[str], target_chip: str | None) -> dict[str, str]:
+    """Collect sdkconfig requirements from user C modules' sdkconfig.require.json.
+
+    Each module can ship a ``sdkconfig.require.json`` mapping chip names (e.g.
+    ``"esp32p4"``) to dicts of ``CONFIG_KEY: value`` pairs. Only the block
+    matching *target_chip* is collected; others are ignored. Multiple modules
+    are merged into a single dict.
+    """
+    if not target_chip:
+        return {}
+    import json
+    result: dict[str, str] = {}
+    for mod_path in module_paths:
+        mod_dir = os.path.dirname(os.path.abspath(mod_path))
+        req_file = os.path.join(mod_dir, 'sdkconfig.require.json')
+        if not os.path.isfile(req_file):
+            continue
+        try:
+            with open(req_file, 'r', encoding='utf-8') as f:
+                data = json.load(f)
+        except Exception:
+            continue
+        block = data.get(target_chip)
+        if isinstance(block, dict):
+            for k, v in block.items():
+                if isinstance(k, str) and isinstance(v, str):
+                    result[k] = v
+    return result
+
+
+def _write_esp32_sdkconfig_fragment(path: str, *, flash_mb: int, partitions_csv: str, extra_sdkconfig: dict[str, str] | None = None) -> None:
     path = os.path.abspath(path)
     os.makedirs(os.path.dirname(path), exist_ok=True)
 
@@ -173,6 +203,10 @@ def _write_esp32_sdkconfig_fragment(path: str, *, flash_mb: int, partitions_csv:
         val = 'y' if mb == flash_mb else 'n'
         lines.append(f'CONFIG_ESPTOOLPY_FLASHSIZE_{mb}MB={val}')
 
+    if extra_sdkconfig:
+        for k, v in extra_sdkconfig.items():
+            lines.append(f'{k}={v}')
+
     with open(path, 'w', encoding='utf-8') as f:
         f.write('\n'.join(lines) + '\n')
 
@@ -183,6 +217,7 @@ def _prepare_esp32_partition_auto(
     build_dir: str,
     passthrough: list[str],
     flash_mb: int,
+    extra_sdkconfig: dict[str, str] | None = None,
 ) -> tuple[list[str], str, str]:
     mv = _extract_make_vars(passthrough)
 
@@ -210,7 +245,7 @@ def _prepare_esp32_partition_auto(
 
     partitions_csv = os.path.join(tool_dir, 'partitions.csv')
     sdkconfig_fragment = os.path.join(tool_dir, 'sdkconfig.mp_make_tools')
-    _write_esp32_sdkconfig_fragment(sdkconfig_fragment, flash_mb=flash_mb, partitions_csv=partitions_csv)
+    _write_esp32_sdkconfig_fragment(sdkconfig_fragment, flash_mb=flash_mb, partitions_csv=partitions_csv, extra_sdkconfig=extra_sdkconfig)
 
     for cmake in glob.glob(os.path.join(temp_board_dir, 'mpconfigboard.cmake')):
         _append_sdkconfig_defaults(cmake, sdkconfig_fragment)
@@ -798,12 +833,14 @@ def main(argv: list[str] | None = None) -> int:
     if is_esp32 and esp32_partition_auto:
         from .esp32_partitions import write_factory_partitions_csv
 
+        module_sdkconfig = _collect_module_sdkconfig(exmods_resolved, implied_chips) if exmods_resolved else {}
         passthrough_esp32, build_name, partitions_csv = _prepare_esp32_partition_auto(
             project_dir=project_dir,
             port_dir=port_dir,
             build_dir=build_dir,
             passthrough=passthrough,
             flash_mb=esp32_flash_mb,
+            extra_sdkconfig=module_sdkconfig,
         )
         build_name_for_output = build_name
 
