@@ -217,7 +217,7 @@ def _prepare_esp32_partition_auto(
     build_dir: str,
     passthrough: list[str],
     flash_mb: int,
-    extra_sdkconfig: dict[str, str] | None = None,
+    module_paths: list[str] | None = None,
 ) -> tuple[list[str], str, str]:
     mv = _extract_make_vars(passthrough)
 
@@ -245,6 +245,19 @@ def _prepare_esp32_partition_auto(
 
     partitions_csv = os.path.join(tool_dir, 'partitions.csv')
     sdkconfig_fragment = os.path.join(tool_dir, 'sdkconfig.mp_make_tools')
+
+    # Determine the actual chip from the board's mpconfigboard.cmake (IDF_TARGET).
+    # This is more reliable than the build target argument, which can be a
+    # generic "esp32" or mismatched with the board (e.g. target=esp32s3 but
+    # BOARD=ESP32_GENERIC_P4).
+    idf_target: str | None = None
+    mcb = os.path.join(board_dir_src, 'mpconfigboard.cmake')
+    if os.path.isfile(mcb):
+        m = re.search(r'\bset\s*\(\s*IDF_TARGET\s+([A-Za-z0-9_]+)', open(mcb, encoding='utf-8').read())
+        if m:
+            idf_target = m.group(1).lower()
+    extra_sdkconfig = _collect_module_sdkconfig(module_paths or [], idf_target)
+
     _write_esp32_sdkconfig_fragment(sdkconfig_fragment, flash_mb=flash_mb, partitions_csv=partitions_csv, extra_sdkconfig=extra_sdkconfig)
 
     for cmake in glob.glob(os.path.join(temp_board_dir, 'mpconfigboard.cmake')):
@@ -833,14 +846,13 @@ def main(argv: list[str] | None = None) -> int:
     if is_esp32 and esp32_partition_auto:
         from .esp32_partitions import write_factory_partitions_csv
 
-        module_sdkconfig = _collect_module_sdkconfig(exmods_resolved, implied_chips) if exmods_resolved else {}
         passthrough_esp32, build_name, partitions_csv = _prepare_esp32_partition_auto(
             project_dir=project_dir,
             port_dir=port_dir,
             build_dir=build_dir,
             passthrough=passthrough,
             flash_mb=esp32_flash_mb,
-            extra_sdkconfig=module_sdkconfig,
+            module_paths=exmods_resolved,
         )
         build_name_for_output = build_name
 
