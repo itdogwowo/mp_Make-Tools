@@ -2,13 +2,13 @@
   "micropython": {
     "dir": "lib/micropython",
     "url": "https://github.com/micropython/micropython",
-    "ref": "v1.29.0-preview",
+    "ref": "c4fa8cb3091e0a7699a5ec196227324c47402701",
     "recursive": true
   },
   "esp_idf": {
     "dir": "lib/esp-idf",
     "url": "https://github.com/espressif/esp-idf",
-    "ref": "v5.5.1",
+    "ref": "v5.5.5",
     "recursive": true
   },
   "mp_jpeg": {
