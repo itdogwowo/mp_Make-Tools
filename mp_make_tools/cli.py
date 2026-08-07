@@ -210,6 +210,40 @@ def _select_project_sdkconfig(sdkconfig: dict | None, target_chip: str | None) -
     return {}
 
 
+def _board_idf_target(board_dir_src: str, port_dir: str) -> str | None:
+    """Determine the board's IDF_TARGET from its cmake files.
+
+    Boards may set it directly in mpconfigboard.cmake, or (like the shared
+    ESP32_GENERIC_* boards) only include a chip-specific common file such as
+    ``boards/mpconfigboard_esp32p4_common.cmake``. Follow the include chain,
+    and fall back to the chip name encoded in the common file's name.
+    """
+    board_cmake = os.path.join(board_dir_src, 'mpconfigboard.cmake')
+    if not os.path.isfile(board_cmake):
+        return None
+
+    with open(board_cmake, encoding='utf-8') as f:
+        text = f.read()
+
+    m = re.search(r'\bset\s*\(\s*IDF_TARGET\s+["\']?([A-Za-z0-9_]+)', text)
+    if m:
+        return m.group(1).lower()
+
+    for inc in re.findall(r'include\s*\(\s*([^\s)]+)', text):
+        if 'mpconfigboard_' in inc and '_common.cmake' in inc:
+            m = re.search(r'mpconfigboard_([a-z0-9_]+)_common\.cmake', inc)
+            if m:
+                return m.group(1).lower()
+        for base in (board_dir_src, os.path.join(port_dir, 'boards'), port_dir):
+            inc_path = os.path.join(base, inc)
+            if os.path.isfile(inc_path):
+                with open(inc_path, encoding='utf-8') as f:
+                    m = re.search(r'\bset\s*\(\s*IDF_TARGET\s+["\']?([A-Za-z0-9_]+)', f.read())
+                if m:
+                    return m.group(1).lower()
+    return None
+
+
 def _write_esp32_sdkconfig_fragment(path: str, *, flash_mb: int, partitions_csv: str, extra_sdkconfig: dict[str, str] | None = None) -> None:
     path = os.path.abspath(path)
     os.makedirs(os.path.dirname(path), exist_ok=True)
@@ -267,16 +301,11 @@ def _prepare_esp32_partition_auto(
     partitions_csv = os.path.join(tool_dir, 'partitions.csv')
     sdkconfig_fragment = os.path.join(tool_dir, 'sdkconfig.mp_make_tools')
 
-    # Determine the actual chip from the board's mpconfigboard.cmake (IDF_TARGET).
+    # Determine the actual chip from the board's cmake files (IDF_TARGET).
     # This is more reliable than the build target argument, which can be a
     # generic "esp32" or mismatched with the board (e.g. target=esp32s3 but
     # BOARD=ESP32_GENERIC_P4).
-    idf_target: str | None = None
-    mcb = os.path.join(board_dir_src, 'mpconfigboard.cmake')
-    if os.path.isfile(mcb):
-        m = re.search(r'\bset\s*\(\s*IDF_TARGET\s+([A-Za-z0-9_]+)', open(mcb, encoding='utf-8').read())
-        if m:
-            idf_target = m.group(1).lower()
+    idf_target = _board_idf_target(board_dir_src, port_dir)
     # Project-level sdkconfig (make_config.json "esp32.sdkconfig") wins over
     # module declarations (sdkconfig.require.json), so board/chip-level settings
     # live in one place instead of being scattered across modules.
