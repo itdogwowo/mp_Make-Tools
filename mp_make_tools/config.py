@@ -34,6 +34,7 @@ class MpConfig:
     esp32_app_margin_kb: int | None = None
     esp32_idf_component_dependencies: dict[str, str] | None = None
     esp32_make_vars: dict[str, str] | None = None
+    esp32_sdkconfig: dict | None = None
 
 
 def _deep_get(dct: dict, keys: list[str], default=None):
@@ -134,4 +135,5 @@ def load_config(project_dir: str, config_path: str | None) -> MpConfig:
         esp32_app_margin_kb=_deep_get(data, ['esp32', 'partition', 'app_margin_kb']),
         esp32_idf_component_dependencies=_deep_get(data, ['esp32', 'idf_component', 'dependencies']),
         esp32_make_vars=_deep_get(data, ['esp32', 'make', 'vars']) or _deep_get(data, ['esp32', 'make_vars']),
+        esp32_sdkconfig=_deep_get(data, ['esp32', 'sdkconfig']) or _deep_get(data, ['esp32', 'extra_sdkconfig']),
     )

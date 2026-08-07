@@ -29,6 +29,13 @@
       "flash_mb": 4,
       "app_margin_kb": 4
     },
+    "sdkconfig": {
+      "esp32p4": {
+        "CONFIG_ESP32P4_REV_MIN_300": "n",
+        "CONFIG_ESP32P4_REV_MIN_0": "y",
+        "CONFIG_ESP32P4_SELECTS_REV_LESS_V3": "y"
+      }
+    },
     "idf_component": {
       "dependencies": {
         "espressif/esp_new_jpeg": "^1.0.0",
@@ -38,8 +45,8 @@
     "make": {
       "_comment": "C5_WIFI,SPIRAM_OCT",
       "vars": {
-        "BOARD": "ESP32_GENERIC_S3",
-        "BOARD_VARIANT": "SPIRAM_OCT"
+        "BOARD": "ESP32_GENERIC_P4",
+        "BOARD_VARIANT": "C6_WIFI"
       }
     }
   },

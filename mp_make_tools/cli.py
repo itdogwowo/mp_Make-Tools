@@ -190,6 +190,26 @@ def _collect_module_sdkconfig(module_paths: list[str], target_chip: str | None) 
     return result
 
 
+def _select_project_sdkconfig(sdkconfig: dict | None, target_chip: str | None) -> dict[str, str]:
+    """Select the project-level sdkconfig block (make_config.json "esp32.sdkconfig").
+
+    Supports two forms, mirroring ``sdkconfig.require.json``:
+    - flat dict of ``CONFIG_KEY: "value"`` strings: applied to every esp32 target
+    - nested dict keyed by chip names (e.g. ``{"esp32p4": {...}}``): only the
+      block matching the board's chip is applied, so e.g. P4-specific settings
+      never leak into S3 builds.
+    """
+    if not sdkconfig:
+        return {}
+    if all(isinstance(v, str) for v in sdkconfig.values()):
+        return {k: v for k, v in sdkconfig.items() if isinstance(k, str) and isinstance(v, str)}
+    if target_chip:
+        block = sdkconfig.get(target_chip)
+        if isinstance(block, dict):
+            return {k: v for k, v in block.items() if isinstance(k, str) and isinstance(v, str)}
+    return {}
+
+
 def _write_esp32_sdkconfig_fragment(path: str, *, flash_mb: int, partitions_csv: str, extra_sdkconfig: dict[str, str] | None = None) -> None:
     path = os.path.abspath(path)
     os.makedirs(os.path.dirname(path), exist_ok=True)
@@ -218,6 +238,7 @@ def _prepare_esp32_partition_auto(
     passthrough: list[str],
     flash_mb: int,
     module_paths: list[str] | None = None,
+    project_sdkconfig: dict[str, str] | None = None,
 ) -> tuple[list[str], str, str]:
     mv = _extract_make_vars(passthrough)
 
@@ -256,7 +277,12 @@ def _prepare_esp32_partition_auto(
         m = re.search(r'\bset\s*\(\s*IDF_TARGET\s+([A-Za-z0-9_]+)', open(mcb, encoding='utf-8').read())
         if m:
             idf_target = m.group(1).lower()
-    extra_sdkconfig = _collect_module_sdkconfig(module_paths or [], idf_target)
+    # Project-level sdkconfig (make_config.json "esp32.sdkconfig") wins over
+    # module declarations (sdkconfig.require.json), so board/chip-level settings
+    # live in one place instead of being scattered across modules.
+    module_sdkconfig = _collect_module_sdkconfig(module_paths or [], idf_target)
+    project_sdkconfig = _select_project_sdkconfig(project_sdkconfig, idf_target)
+    extra_sdkconfig = {**(module_sdkconfig or {}), **(project_sdkconfig or {})}
 
     _write_esp32_sdkconfig_fragment(sdkconfig_fragment, flash_mb=flash_mb, partitions_csv=partitions_csv, extra_sdkconfig=extra_sdkconfig)
 
@@ -853,6 +879,7 @@ def main(argv: list[str] | None = None) -> int:
             passthrough=passthrough,
             flash_mb=esp32_flash_mb,
             module_paths=exmods_resolved,
+            project_sdkconfig=cfg.esp32_sdkconfig,
         )
         build_name_for_output = build_name
 

@@ -389,6 +389,42 @@ python3 /path/to/mp_Make-Tools/make.py --project-dir /path/to/firmware \
   esp32 BOARD=ESP32_GENERIC
 ```
 
+## ESP32 sdkconfig 注入（板級）
+
+板子/晶片層級的 sdkconfig 設定寫在設定檔的 `esp32.sdkconfig`，建置時會與各模組 `sdkconfig.require.json` 的宣告合併後寫入 sdkconfig fragment。支援兩種寫法：
+
+**巢狀（以晶片名分塊，推薦）**——只對應的晶片生效，其他目標（例如同時編 S3）完全不受影響：
+
+```json
+{
+  "esp32": {
+    "sdkconfig": {
+      "esp32p4": {
+        "CONFIG_ESP32P4_REV_MIN_300": "n",
+        "CONFIG_ESP32P4_REV_MIN_0": "y",
+        "CONFIG_ESP32P4_SELECTS_REV_LESS_V3": "y"
+      }
+    }
+  }
+}
+```
+
+**扁平（值為字串）**——套用於所有 esp32 目標：
+
+```json
+{
+  "esp32": {
+    "sdkconfig": {
+      "CONFIG_ESPTOOLPY_FLASHSIZE_8MB": "y"
+    }
+  }
+}
+```
+
+優先層級：**專案層級 `esp32.sdkconfig` > 模組 `sdkconfig.require.json`**（同一 CONFIG 衝突時以專案層級為準；不同 CONFIG 則共存）。模組宣告維持原語意——每個模組宣告自己需要的設定，只在對應晶片生效。
+
+（上例：ESP32-P4 pre-rev3 晶片（如 eco2）在 IDF 5.5.4+ 需要這些選項才能開機，見 micropython PR #19564。）
+
 ## Freeze 與額外 manifest
 
 額外 include 其他 manifest：

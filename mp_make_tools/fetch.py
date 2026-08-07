@@ -1,9 +1,15 @@
 from __future__ import annotations
 
+import re
+
 import os
 import subprocess
 
 from .proc import run
+
+
+def _is_commit_sha(ref: str) -> bool:
+    return bool(re.fullmatch(r'[0-9a-fA-F]{7,40}', ref))
 
 
 def _read_text_if_exists(path: str) -> str:
@@ -51,7 +57,7 @@ def ensure_submodule_or_clone(
 
     os.makedirs(os.path.dirname(dest), exist_ok=True)
     cmd = ['git', 'clone', f'--depth={depth}']
-    if ref:
+    if ref and not _is_commit_sha(ref):
         cmd.extend(['-b', ref])
     if recursive:
         cmd.append('--recursive')
@@ -59,6 +65,11 @@ def ensure_submodule_or_clone(
     rc = run(cmd, cwd=project_dir)
     if rc != 0 or not os.path.exists(dest):
         raise RuntimeError(f'Failed to fetch repo into: {dest}')
+    if ref and _is_commit_sha(ref):
+        run(['git', '-c', 'fetch.recurseSubmodules=no', '-C', dest, 'fetch', '--depth=1', 'origin', ref], cwd=project_dir)
+        run(['git', '-C', dest, 'checkout', ref], cwd=project_dir)
+        if recursive:
+            run(['git', '-C', dest, 'submodule', 'update', '--init', '--recursive'], cwd=project_dir)
 
     return dest
 
