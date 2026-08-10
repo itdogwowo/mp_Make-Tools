@@ -581,6 +581,7 @@ def main(argv: list[str] | None = None) -> int:
         return 1
 
     from .config import load_config
+    from .self_update import try_self_update
     from .doctor import doctor
     from .git_tools import is_head_at_ref
     from .manifest import write_manifest
@@ -612,6 +613,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument('--no-idf-export', dest='no_idf_export', default=False, action='store_true')
     parser.add_argument('--build-dir', dest='build_dir', default=None, action='store')
     parser.add_argument('--strict-config', dest='strict_config', default=False, action='store_true')
+    parser.add_argument('--no-self-update', dest='no_self_update', default=False, action='store_true')
 
     parser.add_argument('--manifest-only', dest='manifest_only', default=False, action='store_true')
     parser.add_argument('--doctor', dest='doctor', default=False, action='store_true')
@@ -633,6 +635,8 @@ def main(argv: list[str] | None = None) -> int:
 
     parser.add_argument('target', nargs='?', default=None)
     args, passthrough = parser.parse_known_args(argv)
+
+    try_self_update(enabled=not args.no_self_update, argv=None, strict_clean=False)
 
     project_dir = os.path.abspath(args.project_dir or _default_project_dir())
     cfg = load_config(project_dir, args.config)
