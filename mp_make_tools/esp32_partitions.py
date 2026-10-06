@@ -22,7 +22,7 @@ def write_factory_partitions_csv(
     nvs_size: int = 0x6000,
     phy_init_size: int = 0x1000,
     first_offset: int = 0x9000,
-    include_vfs: bool = False,
+    include_vfs: bool = True,
     vfs_subtype: str = 'fat',
 ) -> None:
     if flash_mb <= 0:

@@ -348,10 +348,48 @@ python3 /path/to/mp_Make-Tools/make.py --project-dir /path/to/firmware --name my
 
 ## ESP32 分割表自動調整（factory-only）
 
-如果你希望「永遠用兩段式建置」來最大化 `vfs` 分區（檔案系統空間），可以啟用分割表自動調整：
+啟用後走兩段式建置：
 
 - 第一次建置：先取得 `micropython.bin` 的實際大小（即使封裝失敗也沒關係，只要 `micropython.bin` 已生成）
 - 第二次建置：依據第一次的 `micropython.bin` 大小重寫 `partitions.csv`，讓 `factory` 分區剛好放得下 app，`vfs` 吃掉剩餘空間，最後封裝成功
+
+**產生的分割表會自帶一個 `vfs` 分割區**（label 必須是 `vfs` 或 `ffat`，MicroPython 靠 label 判斷檔案系統類型）：
+
+```
+nvs,data,nvs,0x9000,0x6000
+phy_init,data,phy,0xF000,0x1000
+factory,app,factory,0x10000,0x2B0000
+vfs,data,fat,0x2C0000,0xD40000
+```
+
+> **為什麼一定要有這一行？** 上游的 `partitions-*.csv` 都沒有 `vfs`，完全依賴
+> `ports/esp32/main.c` 在開機時自動註冊一個（用 `esp_flash_get_physical_size()`）。
+> 那段在 ESP-IDF v6 會**靜默失敗**：`esp_partition_register_external()` 的回傳值被丟棄，
+> 而 IDF v6 的大小檢查用的是 `esp_flash_get_size()`（= image header 宣告值），
+> 不是實際晶片大小。失敗之後 `_boot.py` 會跳過掛載，任何寫入 `/` 都會得到
+> `OSError: [Errno 19] ENODEV`。明確寫出 `vfs` 可以完全避開這條路。
+
+### flash 大小會自動偵測
+
+**`flash_mb` 可以省略**，但**建議明寫**（見上面「安全 floor」）。未指定時，工具會沿著 board 的 `SDKCONFIG_DEFAULTS` 鏈
+（含 `include()` 與 `BOARD_VARIANT` 的 variant 檔）找 `CONFIG_ESPTOOLPY_FLASHSIZE_<N>MB=y`，
+後者覆蓋前者，取最後一個：
+
+| board | 來源 | 結果 |
+|---|---|---|
+| `ESP32_GENERIC_S3` | `boards/sdkconfig.base` | 4 MB |
+| `ESP32_GENERIC_S31` | `boards/sdkconfig.s31`（排在 base 之後） | 16 MB |
+
+找不到時會印 `WARN: could not detect the flash size from the board; assuming 4MB.`。
+
+> ⚠️ **自動偵測讀的是 board 定義，不是你的模組。** 帶 octal PSRAM 的 ESP32-S3 模組
+> 常見是 16MB flash，但 `ESP32_GENERIC_S3` 宣告 4MB。**宣告小於實際晶片可以開機**
+> （只是用不到多的空間）；**宣告大於實際晶片會開不了機**（bootloader 會報
+> `Detected size smaller than the size in the binary image header. Probe failed.`）。
+> 所以不確定時挑小的，確定時用 `--esp32-flash-mb` 或 `esp32.partition.flash_mb` 覆寫。
+
+**實務上建議把 `flash_mb` 明寫成「你們會出貨的最小 flash」** —— 當成安全 floor，不要依賴自動偵測。
+這樣換 `BOARD` 時不會不小心把值放大到超過實際模組。
 
 設定檔（建議）：
 
@@ -385,7 +423,7 @@ CLI 也可覆寫：
 
 ```bash
 python3 /path/to/mp_Make-Tools/make.py --project-dir /path/to/firmware \
-  --esp32-partition-auto --esp32-flash-mb 4 --esp32-app-margin-kb 0 \
+  --esp32-partition-auto --esp32-flash-mb 16 --esp32-app-margin-kb 0 \
   esp32 BOARD=ESP32_GENERIC
 ```
 

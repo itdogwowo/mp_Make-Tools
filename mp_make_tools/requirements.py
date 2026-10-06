@@ -42,6 +42,7 @@ ESP32 = RequirementSet(
     notes=(
         'ESP-IDF is required for ESP32 builds (set IDF_PATH or use --esp-idf-dir).',
         'MicroPython recommended ESP-IDF: v5.5.1 (also supports v5.3, v5.4, v5.4.1, v5.4.2).',
+        'ESP-IDF v6.x needs the MicroPython PR #19725 (esp32: IDF v6 compatibility layer); plain master does not build against it.',
     ),
 )
 

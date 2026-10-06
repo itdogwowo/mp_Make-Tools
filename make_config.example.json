@@ -1,4 +1,9 @@
 {
+  "_notes": [
+    "範例設定。flash_mb 建議明寫成「你們會出貨的最小 flash」當作安全 floor：",
+    "宣告小於實際晶片 → 到處都能開機；宣告大於實際 → bootloader 會 Probe failed。",
+    "省略 flash_mb 時會沿 board 的 sdkconfig 鏈自動偵測，換 board 時值會跟著變。"
+  ],
   "git_manage": "git_config.json",
   "esp_idf": {
     "no_export": false

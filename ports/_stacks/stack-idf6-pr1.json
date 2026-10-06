@@ -1,0 +1,60 @@
+{
+  "_notes": [
+    "來源版本組合（stack）：IDF v6.1 + cumin777 s31-pr1-idf6 + lv_binding PR #411。",
+    "pr1 只有「IDF v6 相容層」，沒有 S31 SoC 支援 —— 所以這組只能用來編 S3。",
+    "用途：A/B 確認某個問題是出在 IDF v6 相容層，還是出在 S31 SoC 那一層。",
+    "使用方式：從專案根目錄 cp ports/_stacks/stack-idf6-pr1.json git_config.json",
+    "  搭配的 preset 只能用 s3-quad / s3-oct，用 s31* 會找不到 BOARD。"
+  ],
+  "strict_ref": true,
+  "micropython": {
+    "dir": "lib/micropython",
+    "url": "https://github.com/cumin777/micropython",
+    "_ref": "22a0c19876978d0e3a83a91e51f872a894910711",
+    "ref": "22a0c19876978d0e3a83a91e51f872a894910711",
+    "recursive": true,
+    "force_reset": true
+  },
+  "esp_idf": {
+    "dir": "lib/esp-idf",
+    "url": "https://github.com/espressif/esp-idf",
+    "ref": "v6.1",
+    "recursive": true,
+    "force_reset": true
+  },
+  "mp_jpeg": {
+    "dir": "ext_mod/mp_jpeg",
+    "url": "https://github.com/itdogwowo/mp_jpeg",
+    "ref": "master",
+    "recursive": true
+  },
+  "mp_heap_caps": {
+    "dir": "ext_mod/mp_heap_caps",
+    "url": "https://github.com/itdogwowo/mp_heap_caps.git",
+    "ref": "main",
+    "recursive": true
+  },
+  "mp_lcd_bus": {
+    "dir": "ext_mod/mp_lcd_bus",
+    "url": "https://github.com/itdogwowo/mp_lcd_bus.git",
+    "ref": "main",
+    "recursive": true
+  },
+  "mp_hub75": {
+    "dir": "ext_mod/mp_hub75",
+    "url": "https://github.com/itdogwowo/mp_hub75.git",
+    "ref": "main",
+    "recursive": true
+  },
+  "lv_binding": {
+    "dir": "ext_mod/lv_binding_micropython",
+    "url": "https://github.com/andrewleech/lv_binding_micropython.git",
+    "ref": "530997026e8b38ce9c1b7eb970943e05c1ccd1f2",
+    "recursive": true,
+    "force_reset": true
+  },
+  "tags_limit": 30,
+  "list_wrap": 3,
+  "write_detected_to": "config.json",
+  "update_detected_on_fetch": false
+}

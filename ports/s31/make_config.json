@@ -1,0 +1,47 @@
+{
+  "_notes": [
+    "ESP32-S31，16MB flash，無 PSRAM，CPU 320MHz（此晶片的預設值就是上限）。",
+    "刻意不提供 esp32.sdkconfig.esp32s31 —— 基礎板的 sdkconfig.spiram_oct 只切模式、",
+    "不含 CONFIG_SPIRAM=y，所以 PSRAM 維持關閉（與上游預設行為一致）。",
+    "要開 PSRAM 請用 s31-psram250 / s31-psram200。"
+  ],
+  "git_manage": "git_config.json",
+  "esp_idf": {
+    "chips": "esp32s31",
+    "no_export": false
+  },
+  "build": {
+    "target": "esp32s31",
+    "dir": "build",
+    "jobs": null,
+    "user_c_modules": null,
+    "strict": false,
+    "no_doctor": false,
+    "no_clean": false
+  },
+  "exmod": {
+    "root": "ext_mod",
+    "list": [
+      "/lv_binding_micropython/micropython.cmake"
+    ]
+  },
+  "esp32": {
+    "partition": {
+      "auto": true,
+      "app_margin_kb": 4
+    },
+    "sdkconfig": {},
+    "idf_component": {
+      "dependencies": {}
+    },
+    "make": {
+      "vars": {
+        "BOARD": "ESP32_GENERIC_S31",
+        "BOARD_VARIANT": ""
+      }
+    }
+  },
+  "output": {
+    "name": "s31"
+  }
+}

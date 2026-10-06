@@ -1,0 +1,60 @@
+{
+  "_notes": [
+    "ESP32-S31，16MB flash，octal PSRAM 200MHz（IDF 預設值），CPU 320MHz。",
+    "這是 s31-psram250 的保守版：250MHz 是晶片上限，而 S31 的 MSPI timing tuning 仍是 ⏳（IDF-14653），",
+    "所以若 250MHz 不穩，這一版是第一個該試的對照。"
+  ],
+  "git_manage": "git_config.json",
+  "esp_idf": {
+    "chips": "esp32s31",
+    "no_export": false
+  },
+  "build": {
+    "target": "esp32s31",
+    "dir": "build",
+    "jobs": null,
+    "user_c_modules": null,
+    "strict": false,
+    "no_doctor": false,
+    "no_clean": false
+  },
+  "exmod": {
+    "root": "ext_mod",
+    "list": [
+      "/lv_binding_micropython/micropython.cmake"
+    ]
+  },
+  "esp32": {
+    "partition": {
+      "auto": true,
+      "app_margin_kb": 4
+    },
+    "sdkconfig": {
+      "esp32s31": {
+        "CONFIG_SPIRAM": "y",
+        "CONFIG_SPIRAM_MODE_OCT": "y",
+        "CONFIG_SPIRAM_SPEED_250M": "",
+        "CONFIG_SPIRAM_SPEED_200M": "y",
+        "CONFIG_SPIRAM_SPEED_100M": "",
+        "CONFIG_SPIRAM_SPEED_40M": "",
+        "CONFIG_SPIRAM_SPEED": "200",
+        "CONFIG_SPIRAM_BOOT_INIT": "y",
+        "CONFIG_SPIRAM_IGNORE_NOTFOUND": "y",
+        "CONFIG_SPIRAM_USE_MALLOC": "y",
+        "CONFIG_SPIRAM_MALLOC_ALWAYSINTERNAL": "8192"
+      }
+    },
+    "idf_component": {
+      "dependencies": {}
+    },
+    "make": {
+      "vars": {
+        "BOARD": "ESP32_GENERIC_S31",
+        "BOARD_VARIANT": ""
+      }
+    }
+  },
+  "output": {
+    "name": "s31-psram200"
+  }
+}

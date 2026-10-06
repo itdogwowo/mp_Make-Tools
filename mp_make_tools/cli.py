@@ -244,6 +244,77 @@ def _board_idf_target(board_dir_src: str, port_dir: str) -> str | None:
     return None
 
 
+def _read_sdkconfig_defaults_chain(cmake_path: str, port_dir: str, seen: set | None = None) -> list[str]:
+    """Collect SDKCONFIG_DEFAULTS entries from a board cmake, in evaluation order.
+
+    ``include(...)`` is followed in place so that a common board file which does
+    ``set(SDKCONFIG_DEFAULTS ...)`` contributes before the including file's own
+    ``list(APPEND SDKCONFIG_DEFAULTS ...)``.
+    """
+    seen = seen if seen is not None else set()
+    p = os.path.abspath(cmake_path)
+    if p in seen or not os.path.isfile(p):
+        return []
+    seen.add(p)
+
+    with open(p, encoding='utf-8') as f:
+        text = f.read()
+
+    out: list[str] = []
+    for m in re.finditer(
+        r'include\s*\(\s*([^\s)]+)|(?:set|list)\s*\(\s*(?:APPEND\s+)?SDKCONFIG_DEFAULTS\b(.*?)\)',
+        text,
+        re.S,
+    ):
+        if m.group(1) is not None:
+            for base in (os.path.dirname(p), os.path.join(port_dir, 'boards'), port_dir):
+                cand = os.path.join(base, m.group(1))
+                if os.path.isfile(cand):
+                    out.extend(_read_sdkconfig_defaults_chain(cand, port_dir, seen))
+                    break
+        else:
+            out.extend(re.findall(r'[^\s()]+', m.group(2)))
+    return out
+
+
+def _board_flash_mb(board_dir_src: str, port_dir: str, board_variant: str = '') -> int | None:
+    """Detect the flash size (MB) the board declares, or None if it doesn't say.
+
+    Looks for ``CONFIG_ESPTOOLPY_FLASHSIZE_<N>MB=y`` along the board's
+    SDKCONFIG_DEFAULTS chain. The variant file is read last because it is
+    included after ``mpconfigboard.cmake``, and later defaults win.
+    """
+    entries = _read_sdkconfig_defaults_chain(
+        os.path.join(board_dir_src, 'mpconfigboard.cmake'), port_dir
+    )
+    if board_variant:
+        entries += _read_sdkconfig_defaults_chain(
+            os.path.join(board_dir_src, f'mpconfigvariant_{board_variant}.cmake'), port_dir
+        )
+
+    mb: int | None = None
+    for entry in entries:
+        path = entry
+        if not os.path.isabs(path):
+            resolved = None
+            for base in (port_dir, os.path.join(port_dir, 'boards'), board_dir_src):
+                cand = os.path.join(base, path)
+                if os.path.isfile(cand):
+                    resolved = cand
+                    break
+            if resolved is None:
+                continue
+            path = resolved
+        try:
+            with open(path, encoding='utf-8') as f:
+                text = f.read()
+        except OSError:
+            continue
+        for m in re.finditer(r'^\s*CONFIG_ESPTOOLPY_FLASHSIZE_(\d+)MB\s*=\s*y', text, re.M):
+            mb = int(m.group(1))
+    return mb
+
+
 def _write_esp32_sdkconfig_fragment(path: str, *, flash_mb: int, partitions_csv: str, extra_sdkconfig: dict[str, str] | None = None) -> None:
     path = os.path.abspath(path)
     os.makedirs(os.path.dirname(path), exist_ok=True)
@@ -270,10 +341,10 @@ def _prepare_esp32_partition_auto(
     port_dir: str,
     build_dir: str,
     passthrough: list[str],
-    flash_mb: int,
+    flash_mb: int | None,
     module_paths: list[str] | None = None,
     project_sdkconfig: dict[str, str] | None = None,
-) -> tuple[list[str], str, str]:
+) -> tuple[list[str], str, str, int]:
     mv = _extract_make_vars(passthrough)
 
     board_variant = mv.get('BOARD_VARIANT') or ''
@@ -291,6 +362,19 @@ def _prepare_esp32_partition_auto(
 
     if not os.path.isdir(board_dir_src):
         raise RuntimeError(f'ESP32 board directory not found: {board_dir_src}')
+
+    # No explicit flash size configured: read it off the board instead of
+    # assuming 4MB, otherwise a 16MB board (eg ESP32_GENERIC_S31) would get a
+    # 4MB partition table and a matching CONFIG_ESPTOOLPY_FLASHSIZE override.
+    if flash_mb is None:
+        detected = _board_flash_mb(board_dir_src, port_dir, board_variant)
+        if detected is None:
+            print('WARN: could not detect the flash size from the board; assuming 4MB. '
+                  'Set esp32.partition.flash_mb (or --esp32-flash-mb) to override.')
+            flash_mb = 4
+        else:
+            print(f'INFO: flash size auto-detected from the board: {detected}MB')
+            flash_mb = detected
 
     tool_dir = os.path.abspath(os.path.join(build_dir, '.mp_make_tools', 'esp32'))
     temp_board_dir = os.path.join(tool_dir, 'boards', board_name)
@@ -333,7 +417,7 @@ def _prepare_esp32_partition_auto(
         if board_variant:
             build_name += f'-{board_variant}'
 
-    return new_passthrough, build_name, partitions_csv
+    return new_passthrough, build_name, partitions_csv, flash_mb
 
 
 def _unique_path(path: str) -> str:
@@ -686,11 +770,14 @@ def main(argv: list[str] | None = None) -> int:
         if args.esp_idf_version is None and cfg.esp_idf_version is None and git_esp_idf_ref:
             esp_idf_version = git_esp_idf_ref
         else:
-            esp_idf_version = args.esp_idf_version or cfg.esp_idf_version or 'v5.5.1'
+            # No git_config to read an expected version from: leave it unset
+            # rather than guessing, so the version check below doesn't warn
+            # against a hardcoded baseline that may not apply.
+            esp_idf_version = args.esp_idf_version or cfg.esp_idf_version
         should_fetch = False
     else:
         micropython_ref = args.micropython_ref or cfg.micropython_ref
-        esp_idf_version = args.esp_idf_version or cfg.esp_idf_version or 'v5.5.1'
+        esp_idf_version = args.esp_idf_version or cfg.esp_idf_version
 
     esp_idf_chips = args.esp_idf_chips or cfg.esp_idf_chips or implied_chips or 'esp32'
 
@@ -707,7 +794,8 @@ def main(argv: list[str] | None = None) -> int:
         esp32_partition_auto = bool(cfg.esp32_partition_auto is True)
     else:
         esp32_partition_auto = bool(args.esp32_partition_auto)
-    esp32_flash_mb = int(args.esp32_flash_mb or cfg.esp32_flash_mb or 4)
+    esp32_flash_mb = args.esp32_flash_mb if args.esp32_flash_mb is not None else cfg.esp32_flash_mb
+    # (None means "auto-detect from the board", resolved in _prepare_esp32_partition_auto)
     if args.esp32_app_margin_kb is not None:
         esp32_app_margin_kb = int(args.esp32_app_margin_kb)
     elif cfg.esp32_app_margin_kb is not None:
@@ -905,7 +993,7 @@ def main(argv: list[str] | None = None) -> int:
     if is_esp32 and esp32_partition_auto:
         from .esp32_partitions import write_factory_partitions_csv
 
-        passthrough_esp32, build_name, partitions_csv = _prepare_esp32_partition_auto(
+        passthrough_esp32, build_name, partitions_csv, esp32_flash_mb = _prepare_esp32_partition_auto(
             project_dir=project_dir,
             port_dir=port_dir,
             build_dir=build_dir,
@@ -922,7 +1010,7 @@ def main(argv: list[str] | None = None) -> int:
         make_args.extend(passthrough_esp32)
 
         initial_app_size = 0x100000
-        write_factory_partitions_csv(partitions_csv, flash_mb=esp32_flash_mb, app_size=initial_app_size)
+        write_factory_partitions_csv(partitions_csv, flash_mb=esp32_flash_mb, app_size=initial_app_size, include_vfs=True)
 
         if should_clean:
             rc_clean = run_make(make_base + make_args + ['clean'])
@@ -939,7 +1027,7 @@ def main(argv: list[str] | None = None) -> int:
             return rc1
 
         app_size = os.path.getsize(mpy_bin) + (esp32_app_margin_kb * 1024)
-        write_factory_partitions_csv(partitions_csv, flash_mb=esp32_flash_mb, app_size=app_size)
+        write_factory_partitions_csv(partitions_csv, flash_mb=esp32_flash_mb, app_size=app_size, include_vfs=True)
 
         rc = run_make(make_base + make_args)
     else:
