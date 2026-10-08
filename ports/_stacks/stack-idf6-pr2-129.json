@@ -1,4 +1,20 @@
 {
+  "_notes": [
+    "來源版本組合（stack）：ESP-IDF v6.1 + cumin777 MicroPython 1.29/1.30-dev + 自家 fork 的 lv_binding。",
+    "",
+    "lv_binding 是 itdogwowo/lv_binding_micropython @ 3c71398，內容 = 上游 lvgl master(032dda4)",
+    "  + cherry-pick PR #411（MicroPython 1.29 的 mp_obj_int_to_bytes 改名）。",
+    "  用自家 fork 而不用 andrewleech 的 PR 分支：他的 feature branch 可能被刪或再 force-push，",
+    "  而且它 base 在較舊的 master 上，拿不到上游後續 4 個 commit。",
+    "  維護方式：git fetch upstream master && git rebase upstream/master",
+    "    （改動僅 12 行、2 檔，rebase 幾乎不會衝突；上游合併 #411 後這顆會被自動去重消失）",
+    "",
+    "使用方式：從專案根目錄 cp ports/_stacks/stack-idf6-pr2-129.json git_config.json",
+    "搭配的 preset：s3-oct（ESP32-S3 + SPIRAM_OCT）、s31*（S31 系列）。",
+    "",
+    "模組清單在 make_config.json 的 exmod.list，不在本檔。",
+    "注意：這是唯一「實測過能編出 S3 與 S31 固件」的版本組合的後繼版本。"
+  ],
   "strict_ref": true,
   "micropython": {
     "dir": "lib/micropython",
@@ -42,8 +58,10 @@
   "lv_binding": {
     "dir": "ext_mod/lv_binding_micropython",
     "url": "https://github.com/itdogwowo/lv_binding_micropython.git",
+    "_ref": "上游 032dda4 + cherry-pick 5309970(PR #411)",
     "ref": "3c71398d96f01d1028f91c1727ec1a20d28e379a",
-    "recursive": true
+    "recursive": true,
+    "force_reset": true
   },
   "tags_limit": 30,
   "list_wrap": 3,

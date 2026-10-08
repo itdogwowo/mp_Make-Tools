@@ -1,10 +1,14 @@
 {
   "_notes": [
-    "預設設定。flash_mb 刻意固定成 4 —— 這是「安全 floor」。",
-    "理由：宣告小於實際晶片 → 到處都能開機（只是用不到多的空間）；",
-    "      宣告大於實際晶片 → bootloader 會報 Probe failed，直接開不了機。",
-    "所以這裡採用出貨模組的最小值，需要更大空間時由燒錄端處理（重寫 vfs 分割區）。",
-    "省略 flash_mb 會改成沿 board 的 sdkconfig 鏈自動偵測 —— 注意 ESP32_GENERIC_P4 宣告的是 16MB。"
+    "目標板：ESP32-S3-N16R8，BOARD_VARIANT=SPIRAM_OCT（octal PSRAM，240MHz CPU，4MB flash）。",
+    "搭配的 stack：把 ports/_stacks/stack-idf6-pr2-129.json 複製成專案根的 git_config.json。",
+    "  那一組是 IDF v6.1 + cumin777 MicroPython 1.29/1.30-dev + 自家 fork 的 lv_binding（含 PR #411）。",
+    "exmod：工具只讀 list（mp_make_tools/config.py:127）；_list 是底線鍵，程式碼從不讀它，",
+    "  純粹是『想用但先關掉』的停放區。要暫時關閉某模組：把該行從 list 搬到 _list。",
+    "  目前 list 裡五個模組全部啟用。",
+    "flash_mb 刻意固定 4 —— 安全 floor（宣告大於實際晶片會 Probe failed 開不了機）。",
+    "esp32.sdkconfig 只認晶片名，沒有 BOARD_VARIANT 這個軸，所以 esp32s3 那塊同時管 s3 與 s3psram。",
+    "  區塊裡不要放 _comment 之類的鍵，會被原樣寫進 sdkconfig 片段。"
   ],
   "git_manage": "git_config.json",
   "esp_idf": {
@@ -22,6 +26,13 @@
   },
   "exmod": {
     "root": "ext_mod",
+    "_list": [
+      "/mp_jpeg/micropython.cmake",
+      "/mp_hub75/micropython.cmake",
+      "/mp_heap_caps/micropython.cmake",
+      "/mp_lcd_bus/micropython.cmake",
+      "/lv_binding_micropython/micropython.cmake"
+    ],
     "list": [
       "/mp_jpeg/micropython.cmake",
       "/mp_hub75/micropython.cmake",
@@ -37,6 +48,13 @@
       "app_margin_kb": 4
     },
     "sdkconfig": {
+      "esp32s3": {
+        "CONFIG_ESP_DEFAULT_CPU_FREQ_MHZ_40": "",
+        "CONFIG_ESP_DEFAULT_CPU_FREQ_MHZ_80": "",
+        "CONFIG_ESP_DEFAULT_CPU_FREQ_MHZ_160": "",
+        "CONFIG_ESP_DEFAULT_CPU_FREQ_MHZ_240": "y",
+        "CONFIG_ESP_DEFAULT_CPU_FREQ_MHZ": "240"
+      },
       "esp32p4": {
         "CONFIG_ESP32P4_REV_MIN_300": "n",
         "CONFIG_ESP32P4_REV_MIN_0": "y",
@@ -52,8 +70,8 @@
     "make": {
       "_comment": "C5_WIFI,SPIRAM_OCT",
       "vars": {
-        "BOARD": "ESP32_GENERIC_P4",
-        "BOARD_VARIANT": "C6_WIFI"
+        "BOARD": "ESP32_GENERIC_S3",
+        "BOARD_VARIANT": "SPIRAM_OCT"
       }
     }
   },

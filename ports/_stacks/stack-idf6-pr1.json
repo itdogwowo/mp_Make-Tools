@@ -1,5 +1,7 @@
 {
   "_notes": [
+    "⚠️ 保留為 A/B 對照用，不是日常建置的 stack（日常請用 stack-idf6-pr2-129.json）。",
+    "",
     "來源版本組合（stack）：IDF v6.1 + cumin777 s31-pr1-idf6 + lv_binding PR #411。",
     "pr1 只有「IDF v6 相容層」，沒有 S31 SoC 支援 —— 所以這組只能用來編 S3。",
     "用途：A/B 確認某個問題是出在 IDF v6 相容層，還是出在 S31 SoC 那一層。",

@@ -1,7 +1,12 @@
 {
   "_notes": [
+    "⚠️ 已被 stack-idf6-pr2-129.json 取代，保留僅為回溯對照。",
+    "  差異：本檔的 lv_binding 指向 andrewleech 的 PR 分支（可能被刪／再 force-push，",
+    "  且 base 在較舊的 master 上），新版改指自家 fork。",
+    "  要編固件請用 stack-idf6-pr2-129.json。",
+    "",
     "來源版本組合（stack）：IDF v6.1 + cumin777 s31-pr2-soc + lv_binding PR #411。",
-    "這是目前唯一「實測過能編出 S3 與 S31 固件」的組合。",
+    "這是原本「實測過能編出 S3 與 S31 固件」的組合。",
     "force_reset: true —— 切換 stack 時先 reset --hard，否則前一次建置留下的",
     "  lockfile 修改會讓 git checkout 失敗（工具跑完會把它寫回 false，這是正常的）。",
     "使用方式：從專案根目錄 cp ports/_stacks/stack-idf6-pr2.json git_config.json"
