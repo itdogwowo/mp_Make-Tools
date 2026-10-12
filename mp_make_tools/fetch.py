@@ -25,6 +25,50 @@ def _has_submodule(project_dir: str, rel_path: str) -> bool:
     return f'path = {rel_path}' in gitmodules
 
 
+def _normalize_remote_url(url: str) -> str:
+    """Normalise a git remote URL for comparison (ignore '.git' and trailing '/')."""
+    u = (url or '').strip().rstrip('/')
+    if u.endswith('.git'):
+        u = u[:-4]
+    return u.lower()
+
+
+def _sync_remote_url(dest: str, url: str | None) -> bool:
+    """Make the checkout's ``origin`` remote match the configured URL.
+
+    git_config.json's ``url`` is only used when a repo is first cloned: an
+    existing checkout keeps whatever remote it was originally cloned with, so
+    changing ``url`` afterwards silently kept fetching from the old repo (a
+    branch ref would then track the old upstream). Keep origin in sync with the
+    config so that the config really is the source of truth.
+    """
+    if not url:
+        return False
+
+    proc = subprocess.run(
+        ['git', '-C', dest, 'remote', 'get-url', 'origin'],
+        cwd=dest,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.DEVNULL,
+        text=True,
+    )
+    current = (proc.stdout or '').strip() if proc.returncode == 0 else ''
+
+    if not current:
+        if run(['git', '-C', dest, 'remote', 'add', 'origin', url], cwd=dest) == 0:
+            print(f'INFO: added remote origin -> {url} in {dest}')
+            return True
+        return False
+
+    if _normalize_remote_url(current) == _normalize_remote_url(url):
+        return False
+
+    if run(['git', '-C', dest, 'remote', 'set-url', 'origin', url], cwd=dest) == 0:
+        print(f'INFO: remote origin re-pointed: {current} -> {url} in {dest}')
+        return True
+    return False
+
+
 def ensure_submodule_or_clone(
     *,
     project_dir: str,
@@ -79,6 +123,7 @@ def ensure_repo_ref(
     *,
     ref: str | None,
     recursive: bool,
+    url: str | None = None,
     require_clean: bool = False,
     strict_ref: bool = False,
     force_reset: bool = False,
@@ -86,6 +131,10 @@ def ensure_repo_ref(
     dest = os.path.abspath(dest)
     if not os.path.exists(dest):
         return
+
+    # git_config.json 的 url 只在 clone 時用得到；既有 checkout 的 origin 可能還
+    # 指向舊 repo（改了 url 也不會生效），所以每次都比對並同步。
+    _sync_remote_url(dest, url)
 
     def _clean_untracked() -> None:
         rc = run(['git', '-C', dest, 'clean', '-fd'], cwd=dest)

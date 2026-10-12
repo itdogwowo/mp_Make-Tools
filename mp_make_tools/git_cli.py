@@ -115,6 +115,7 @@ def main(argv: list[str] | None = None) -> int:
                 )
             ensure_repo_ref(
                 repo_dir,
+                url=spec.url,
                 ref=spec.ref,
                 recursive=bool(spec.recursive),
                 require_clean=cfg.require_clean,
