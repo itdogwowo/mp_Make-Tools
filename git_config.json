@@ -42,7 +42,7 @@
   "lv_binding": {
     "dir": "ext_mod/lv_binding_micropython",
     "url": "https://github.com/itdogwowo/lv_binding_micropython.git",
-    "ref": "3c71398d96f01d1028f91c1727ec1a20d28e379a",
+    "ref": "master",
     "recursive": true
   },
   "tags_limit": 30,

@@ -27,11 +27,6 @@
   "exmod": {
     "root": "ext_mod",
     "_list": [
-      "/mp_jpeg/micropython.cmake",
-      "/mp_hub75/micropython.cmake",
-      "/mp_heap_caps/micropython.cmake",
-      "/mp_lcd_bus/micropython.cmake",
-      "/lv_binding_micropython/micropython.cmake"
     ],
     "list": [
       "/mp_jpeg/micropython.cmake",
