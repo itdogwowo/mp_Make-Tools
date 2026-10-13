@@ -3,15 +3,28 @@
     "目標板：ESP32-S3-N16R8，BOARD_VARIANT=SPIRAM_OCT（octal PSRAM，240MHz CPU，4MB flash）。",
     "搭配的 stack：把 ports/_stacks/stack-idf6-pr2-129.json 複製成專案根的 git_config.json。",
     "  那一組是 IDF v6.1 + cumin777 MicroPython 1.29/1.30-dev + 自家 fork 的 lv_binding（含 PR #411）。",
+    "",
+    "★★ 目前是 BASE 狀態：五個 exmod 全部註銷（移到 _list）★★",
+    "  目的：先做出乾淨的 IDF v6.1 基礎 MicroPython 固件，確認底層沒問題，再一個一個把模組加回 list。",
+    "  要回到全模組版本：改用 --config ports/s3-oct/make_config.json（那份仍有五個模組）。",
+    "",
     "exmod：工具只讀 list（mp_make_tools/config.py:127）；_list 是底線鍵，程式碼從不讀它，",
-    "  純粹是『想用但先關掉』的停放區。要暫時關閉某模組：把該行從 list 搬到 _list。",
-    "  目前 list 裡四個模組啟用；mp_hub75 停放中 —— 它依賴的 esphome/esp-hub75 0.3.6 在 IDF v6.1 過不了",
-    "  -Werror=missing-field-initializers（上游 main 已修、registry 尚未發版），所以 dependencies 也一起移除。",
-    "  要恢復：兩邊一起加回來（exmod.list + esp32.idf_component.dependencies），或改用已修好的版本。",
-    "esp32.idf_components_extra：讓工具把 IDF 內建 component 補進 ports/esp32/esp32_common.cmake 的",
-    "  IDF_COMPONENTS。mp_lcd_bus 需要 esp_lcd：IDF 5 由 legacy driver meta-component 間接帶入，",
-    "  IDF v6 的 driver 變成空殼後就沒人拉它（會以 component_requirements.py 的 BUG 失敗）。",
-    "  那個檔案在受管理的 checkout 內、每次 reset --hard，所以只能靠這個設定，手改活不過下一次執行。",
+    "  純粹是『想用但先關掉』的停放區。要開啟某模組：把該行從 _list 搬回 list。",
+    "加回模組的建議順序（由簡到難，一次一個、每次 build 過再往下）：",
+    "  1. mp_heap_caps（無依賴） 2. mp_jpeg（請求檔宣告 esp_new_jpeg）",
+    "  3. lv_binding（無依賴、最大但已驗證可編） 4. mp_hub75（元件問題待決：放行 C++ warning 或等 0.3.7）",
+    "  5. mp_lcd_bus（需要 IDF 6 API port：esp_lcd i2c/i80/rgb）",
+    "",
+    "IDF 相依由模組自己的請求檔決定：模組目錄的 idf_component.yml。",
+    "  dependencies:                  → registry/git 元件（工具同步到 ports/esp32/main/idf_component.yml）",
+    "  mp_make_tools_idf_components:  → IDF 內建元件（工具補進 esp32_common.cmake 的 IDF_COMPONENTS）",
+    "  原因：py/usermod.cmake 只 include 各模組的 micropython.cmake，從不把 usermod 註冊成 IDF component，",
+    "  所以 IDF 看不到這些 manifest；工具把它們合併進 port 的 manifest 才生效。",
+    "同步是雙向的：不再宣告的依賴會從 manifest 移除，managed_components/ 的殘留也一起清掉。",
+    "專案層逃生門（config 優先於模組；BASE 狀態下這是唯一的來源）：",
+    "  esp32.idf_component.dependencies / esp32.idf_components_extra。",
+    "  下面保留 esp_new_jpeg 是刻意的保險；要 100% 純淨的 base 就把那行也拿掉。",
+    "",
     "flash_mb 刻意固定 4 —— 安全 floor（宣告大於實際晶片會 Probe failed 開不了機）。",
     "esp32.sdkconfig 只認晶片名，沒有 BOARD_VARIANT 這個軸，所以 esp32s3 那塊同時管 s3 與 s3psram。",
     "  區塊裡不要放 _comment 之類的鍵，會被原樣寫進 sdkconfig 片段。"
@@ -33,13 +46,13 @@
   "exmod": {
     "root": "ext_mod",
     "_list": [
-      "/mp_hub75/micropython.cmake"
+      "/mp_heap_caps/micropython.cmake",
+      "/mp_jpeg/micropython.cmake",
+      "/lv_binding_micropython/micropython.cmake",
+      "/mp_hub75/micropython.cmake",
+      "/mp_lcd_bus/micropython.cmake"
     ],
     "list": [
-      "/mp_jpeg/micropython.cmake",
-      "/mp_heap_caps/micropython.cmake",
-      "/mp_lcd_bus/micropython.cmake",
-      "/lv_binding_micropython/micropython.cmake"
     ]
   },
   "esp32": {
@@ -48,9 +61,6 @@
       "flash_mb": 4,
       "app_margin_kb": 4
     },
-    "idf_components_extra": [
-      "esp_lcd"
-    ],
     "sdkconfig": {
       "esp32s3": {
         "CONFIG_ESP_DEFAULT_CPU_FREQ_MHZ_40": "",

@@ -228,27 +228,47 @@ ESP32 port 的一些選項通常是用 `make` 變數傳入（例如 `BOARD`、`B
 - 外掛 ESP32-C5（Wi-Fi/BLE）：`BOARD_VARIANT=C5_WIFI`
 - 外掛 ESP32-C6（Wi-Fi/BLE）：`BOARD_VARIANT=C6_WIFI`
 
-### esp32.idf_component.dependencies（ESP-IDF component 依賴）
+### 模組自己的請求檔：idf_component.yml
 
-若你的 user C module 需要額外的 ESP-IDF component（例如 `espressif/esp_new_jpeg`），可用設定檔自動補到 `ports/esp32/main/idf_component.yml`：
+**每個 user C module 用自己目錄的 `idf_component.yml` 宣告它需要的 IDF 東西**，專案 `make_config.json` 不需要列任何依賴：
 
-- `esp32.idf_component.dependencies`：例如 `{ "espressif/esp_new_jpeg": "^1.0.0" }`
+```yaml
+## IDF Component Manager Manifest File
+dependencies:
+  espressif/esp_new_jpeg: "^1.0.0"   # registry 元件
+  esphome/esp-hub75:                  # 或 git 來源（registry 版本在 IDF v6 編不過時）
+    git: https://github.com/esphome-libs/esp-hub75.git
+    path: components/hub75
+    version: d0bb571fdae6ec6215615de4b73a6e8ce8868a85
+  idf:
+    version: ">=5.0.0"
 
-### esp32.idf_components_extra（IDF 內建 component）
+# IDF 內建元件（不是 registry 元件，寫不進 dependencies）
+mp_make_tools_idf_components: ["esp_lcd"]
+```
 
-若你的 user C module 需要的是 **ESP-IDF 內建** component，但 IDF 沒有把它拉進建置，就設這個：
+- `dependencies:` → 工具同步到 `ports/esp32/main/idf_component.yml`（就是 IDF component manager 的語法）
+- `mp_make_tools_idf_components:` → 工具補進 `ports/esp32/esp32_common.cmake` 的 `IDF_COMPONENTS`（行內 `["esp_lcd"]` 或區塊 `- esp_lcd` 清單都可）
+- `idf:` → 略過（那是 ESP-IDF 版本需求，不是元件）
 
-- `esp32.idf_components_extra`：例如 `["esp_lcd"]`
-
-典型例子是 `esp_lcd`：IDF 5 靠 legacy `driver` meta-component 間接帶入，IDF v6 把 `driver` 變成空殼後就沒有人拉它了，於是 `mp_lcd_bus` 這類 usermod 會編不過。
-
-工具會在**每次 checkout 之後**把這些名稱補進 `ports/esp32/esp32_common.cmake` 的 `IDF_COMPONENTS`（位置在 `idf_component_register()` 之前，包在 `# >>> mp_make_tools: esp32.idf_components_extra` 標記區塊內，可重複執行、不會重複插入；清單改動時舊區塊會被換掉）。
-
-**為什麼不能寫在 usermod 的 cmake**：`IDF_COMPONENTS` 必須在 `CMAKE_BUILD_EARLY_EXPANSION`（component 掃描）階段就填好，而 usermod 的 cmake 在那個階段不會被執行；反過來，若只用 `idf_component_get_property()` 去讀一個不在建置內的 component，IDF 會直接以
+**為什麼要工具代勞**：`py/usermod.cmake` 只 `include()` 各模組的 `micropython.cmake`，**從來沒把 usermod 註冊成 IDF component**，所以 IDF 完全看不到模組自己的 `idf_component.yml`；工具把它們合併進 port 的 manifest 才生效。內建元件則不能寫在 usermod 的 cmake —— `IDF_COMPONENTS` 必須在 `CMAKE_BUILD_EARLY_EXPANSION`（component 掃描）階段就填好，usermod 的 cmake 在那個階段不會被執行；而只用 `idf_component_get_property()` 讀一個不在建置內的 component，IDF 會直接以
 `BUG: component_requirements.py: cannot find original component for source component <name>` 失敗。
 
-> ⚠️ `esp32_common.cmake` 位於受管理的 MicroPython checkout 內，**每次執行都會被 `reset --hard`**。
-> 所以請用這個設定（工具每次重新套用），手改一定活不過下一次執行。
+**同步是雙向的（加 / 改 / 刪）**：工具擁有 `main/idf_component.yml` 裡
+`# >>> mp_make_tools: idf_component dependencies` 標記區塊，每次執行**整塊重寫**：
+
+- 新宣告 → 加入；版號或來源改變 → 更新；不再宣告 → **移除**
+- 移除的依賴，`managed_components/<namespace>__<name>/` 也會一併刪除
+  （否則 IDF 還是會把磁碟上找到的 component 編進去）
+- 標記區塊以外的依賴（例如 port 自己列的 `espressif/mdns`、`espressif/tinyusb`）不會被動到
+
+**專案層逃生門**（臨時要加、或模組還沒推上去時）：`make_config.json` 的
+`esp32.idf_component.dependencies`（registry/git 元件）與 `esp32.idf_components_extra`（內建元件）。
+兩者都會被合併，且**優先權高於模組的宣告**。
+
+> ⚠️ 請求檔與 `esp32_common.cmake` 都位於**受管理**的 checkout 內（模組目錄、`lib/micropython`），
+> 每次執行都會 `reset --hard` → 模組端的修改一定要**推上該 repo**；
+> `esp32_common.cmake` 與 `main/idf_component.yml` 則由工具每次重新套用（手改沒有用）。
 
 ### git 遠端 URL 同步
 

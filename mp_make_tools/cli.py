@@ -116,49 +116,150 @@ def _append_sdkconfig_defaults(cmake_file: str, sdkconfig_file: str) -> None:
     with open(cmake_file, 'w', encoding='utf-8') as f:
         f.write(data)
 
-def _ensure_esp32_idf_component_dependencies(port_dir: str, deps: dict[str, str]) -> bool:
+_IDF_DEP_BEGIN = '# >>> mp_make_tools: idf_component dependencies'
+_IDF_DEP_END = '# <<< mp_make_tools: idf_component dependencies'
+_IDF_DEP_NAME_RE = re.compile(r'^  ([A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+)\s*:')
+
+
+def _yaml_dep_lines(name: str, value) -> list[str]:
+    """Render one ``idf_component.yml`` dependency entry.
+
+    ``value`` is either a version string (``"^1.0.0"``) or an object, which is
+    how a component is pinned to a git source instead of the registry::
+
+        { "git": "https://github.com/owner/repo.git",
+          "path": "components/x", "version": "<commit>" }
+    """
+    if isinstance(value, dict):
+        lines = [f'  {name}:']
+        ordered = [k for k in ('git', 'path', 'override_path', 'version') if k in value]
+        ordered += [k for k in value if k not in ordered and k != '__raw__']
+        for k in ordered:
+            v = value.get(k)
+            if isinstance(v, bool):
+                lines.append(f'    {k}: {"true" if v else "false"}')
+            elif isinstance(v, str) and v.strip():
+                lines.append(f'    {k}: "{v.strip()}"')
+            elif v == '':
+                lines.append(f'    {k}:')
+        raw = value.get('__raw__')
+        if isinstance(raw, list):
+            lines.extend(raw)
+        return lines
+    return [f'  {name}: "{str(value).strip()}"']
+
+
+def _ensure_esp32_idf_component_dependencies(port_dir: str, deps: dict | None) -> bool:
+    """Synchronise the tool-managed dependency block in main/idf_component.yml.
+
+    The block between the ``mp_make_tools`` markers is rewritten from scratch on
+    every run, so dependencies get added, updated **and removed** as the config
+    or the modules change. The previous append-only version left removed entries
+    behind -- and because ESP-IDF compiles every component it finds on disk, the
+    already-downloaded component is pruned here as well.
+
+    ``deps`` maps component name -> version string, or -> object for other
+    sources (``{"git": ..., "path": ..., "version": "<commit>"}``).
+    """
+    declared: dict[str, object] = {}
+    for k, v in (deps or {}).items():
+        if not isinstance(k, str) or not k.strip() or not isinstance(v, (str, dict)):
+            continue
+        if isinstance(v, str) and not v.strip():
+            continue
+        declared[k.strip()] = v
+
     manifest = os.path.join(port_dir, 'main', 'idf_component.yml')
-    if not deps or not os.path.exists(manifest):
+    if not os.path.exists(manifest):
         return False
 
     with open(manifest, 'r', encoding='utf-8') as f:
-        lines = f.read().splitlines()
+        text = f.read()
+    newline = '\r\n' if '\r\n' in text else '\n'
+    lines = text.replace('\r\n', '\n').split('\n')
 
-    idx = None
-    for i, line in enumerate(lines):
-        if line.strip() == 'dependencies:':
-            idx = i
-            break
-    if idx is None:
+    start = next((i for i, l in enumerate(lines) if l.strip() == 'dependencies:'), None)
+    if start is None:
         return False
-
-    existing: set[str] = set()
-    for line in lines:
-        m = re.match(r'^\s+([A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+)\s*:', line)
-        if m:
-            existing.add(m.group(1))
-
-    to_add: list[tuple[str, str]] = []
-    for k in sorted(deps.keys()):
-        v = deps.get(k)
-        if not isinstance(k, str) or not isinstance(v, str) or not k.strip() or not v.strip():
+    # The block ends at the next top-level *key* line. Comments at column 0 (our
+    # markers) and blank lines still belong to the block.
+    end = len(lines)
+    for j in range(start + 1, len(lines)):
+        line = lines[j]
+        if not line.strip() or line.startswith(' ') or line.lstrip().startswith('#'):
             continue
-        if k in existing:
+        end = j
+        break
+
+    # 1) Unwrap a previously injected block, remembering what it declared.
+    block: list[str] = []
+    previously_managed: list[str] = []
+    skipping = False
+    for line in lines[start + 1:end]:
+        stripped = line.strip()
+        if stripped == _IDF_DEP_BEGIN:
+            skipping = True
             continue
-        to_add.append((k.strip(), v.strip()))
+        if stripped == _IDF_DEP_END:
+            skipping = False
+            continue
+        if skipping:
+            m = _IDF_DEP_NAME_RE.match(line)
+            if m:
+                previously_managed.append(m.group(1))
+            continue
+        block.append(line)
 
-    if not to_add:
-        return False
+    # 2) Drop bare entries for names we manage: they are re-emitted below, which
+    #    also migrates entries injected by the old append-only version.
+    managed = set(declared) | set(previously_managed)
+    kept: list[str] = []
+    i = 0
+    while i < len(block):
+        m = _IDF_DEP_NAME_RE.match(block[i])
+        if m and m.group(1) in managed:
+            i += 1
+            while i < len(block):
+                nxt = block[i]
+                if not nxt.strip() or nxt.startswith('    ') or nxt.lstrip().startswith('#'):
+                    i += 1
+                    continue
+                break
+            continue
+        kept.append(block[i])
+        i += 1
 
-    insert_at = idx + 1
-    new_lines = lines[:insert_at]
-    for k, v in to_add:
-        new_lines.append(f'  {k}: \"{v}\"')
-    new_lines.extend(lines[insert_at:])
+    emitted: list[str] = []
+    if declared:
+        emitted.append(_IDF_DEP_BEGIN)
+        for name in sorted(declared):
+            emitted.extend(_yaml_dep_lines(name, declared[name]))
+        emitted.append(_IDF_DEP_END)
 
-    with open(manifest, 'w', encoding='utf-8') as f:
-        f.write('\n'.join(new_lines) + '\n')
-    return True
+    while kept and not kept[-1].strip():
+        kept.pop()
+    if kept and emitted:
+        kept.append('')
+
+    new_text = newline.join(lines[:start + 1] + kept + emitted + lines[end:])
+    if text.endswith(newline) and not new_text.endswith(newline):
+        new_text += newline
+    changed = new_text != text
+    if changed:
+        with open(manifest, 'w', encoding='utf-8', newline='') as f:
+            f.write(new_text)
+
+    # 3) A dependency that is no longer declared must lose its downloaded
+    #    component too, otherwise the build keeps compiling it.
+    for name in previously_managed:
+        if name in declared:
+            continue
+        stale_dir = os.path.join(port_dir, 'managed_components', name.replace('/', '__'))
+        if os.path.isdir(stale_dir):
+            shutil.rmtree(stale_dir, ignore_errors=True)
+            print(f'INFO: removed stale managed component: {name}')
+
+    return changed
 
 def _ensure_extra_idf_components(port_dir: str, components: list[str] | None) -> bool:
     """List extra IDF components in IDF_COMPONENTS (ports/esp32/esp32_common.cmake).
@@ -265,6 +366,147 @@ def _collect_module_sdkconfig(module_paths: list[str], target_chip: str | None) 
                 if isinstance(k, str) and isinstance(v, str):
                     result[k] = v
     return result
+
+
+def _parse_manifest_idf_components(text: str) -> list[str]:
+    """Read ``mp_make_tools_idf_components`` from a module's idf_component.yml.
+
+    Built-in IDF components (eg ``esp_lcd``) cannot be listed under
+    ``dependencies:`` -- that block is for registry/git components -- so a module
+    that needs one lists it here, in the same request file, and the build tool
+    adds it to IDF_COMPONENTS in ports/esp32/esp32_common.cmake.
+
+    Accepts an inline list (``mp_make_tools_idf_components: ["esp_lcd"]``) or a
+    block list.
+    """
+    out: list[str] = []
+    lines = text.replace('\r\n', '\n').split('\n')
+    start = next((i for i, l in enumerate(lines)
+                  if re.match(r'^mp_make_tools_idf_components\s*:', l)), None)
+    if start is None:
+        return out
+
+    inline = lines[start].split(':', 1)[1].strip()
+    if inline.startswith('['):
+        for item in inline.strip('[]').split(','):
+            name = item.strip().strip('"').strip("'")
+            if name:
+                out.append(name)
+        return out
+
+    i = start + 1
+    while i < len(lines):
+        m = re.match(r'^\s*-\s*([A-Za-z0-9_./-]+)\s*(?:#.*)?$', lines[i])
+        if not m:
+            break
+        out.append(m.group(1))
+        i += 1
+    return out
+
+
+def _collect_module_idf_components(module_paths: list[str]) -> list[str]:
+    """Collect extra built-in IDF components requested by user C modules.
+
+    Read from each module's own request file (``idf_component.yml``, next to its
+    ``micropython.cmake``)::
+
+        mp_make_tools_idf_components: ["esp_lcd"]
+    """
+    out: list[str] = []
+    for mod_path in module_paths:
+        manifest = os.path.join(os.path.dirname(os.path.abspath(mod_path)), 'idf_component.yml')
+        if not os.path.isfile(manifest):
+            continue
+        try:
+            with open(manifest, 'r', encoding='utf-8') as f:
+                names = _parse_manifest_idf_components(f.read())
+        except OSError:
+            continue
+        for name in names:
+            if name not in out:
+                out.append(name)
+    return out
+
+
+def _parse_manifest_dependencies(text: str) -> dict[str, object]:
+    """Parse the ``dependencies:`` block of an idf_component.yml (line based).
+
+    Returns ``name -> version string`` or ``name -> object`` (git/path/version).
+    Only ``namespace/name`` entries are returned: the special ``idf`` entry (an
+    ESP-IDF version requirement) is not a component and is skipped.
+
+    Entries we cannot model exactly (nested lists such as ``rules:``) are kept
+    verbatim under ``__raw__`` and re-emitted unchanged.
+    """
+    out: dict[str, object] = {}
+    lines = text.replace('\r\n', '\n').split('\n')
+    start = next((i for i, l in enumerate(lines) if l.strip() == 'dependencies:'), None)
+    if start is None:
+        return out
+
+    i = start + 1
+    while i < len(lines):
+        line = lines[i]
+        if line.strip() and not line.startswith(' '):
+            break  # next top-level key
+        m = re.match(r'^  ([A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+)\s*:(.*)$', line)
+        if not m:
+            i += 1
+            continue
+
+        name = m.group(1)
+        inline = m.group(2).strip().strip('"').strip("'")
+        i += 1
+        if inline:
+            out[name] = inline
+            continue
+
+        obj: dict[str, object] = {}
+        raw: list[str] = []
+        while i < len(lines):
+            sub = lines[i]
+            if not sub.strip() or not sub.startswith('    '):
+                break
+            sm = re.match(r'^    ([A-Za-z0-9_.-]+)\s*:\s*(.*)$', sub)
+            if sm and sm.group(2).strip():
+                obj[sm.group(1)] = sm.group(2).strip().strip('"').strip("'")
+            elif sm:
+                obj[sm.group(1)] = ''
+            else:
+                raw.append(sub)
+            i += 1
+        if raw:
+            obj['__raw__'] = raw
+        out[name] = obj
+    return out
+
+
+def _collect_module_idf_component_deps(module_paths: list[str]) -> dict[str, object]:
+    """Collect component-manager dependencies declared by user C modules.
+
+    Every module may ship its own ``idf_component.yml`` next to its
+    ``micropython.cmake`` -- that is the module's own request file, and it is
+    what the module needs in order to build. MicroPython's ``py/usermod.cmake``
+    only includes each module's cmake file and never registers the module as an
+    IDF component, so the component manager would otherwise ignore these
+    manifests; the tool merges them into the port's own manifest instead.
+
+    The first module to declare a component wins; an entry in the project config
+    (``esp32.idf_component.dependencies``) overrides module declarations.
+    """
+    out: dict[str, object] = {}
+    for mod_path in module_paths:
+        manifest = os.path.join(os.path.dirname(os.path.abspath(mod_path)), 'idf_component.yml')
+        if not os.path.isfile(manifest):
+            continue
+        try:
+            with open(manifest, 'r', encoding='utf-8') as f:
+                declared = _parse_manifest_dependencies(f.read())
+        except OSError:
+            continue
+        for name, value in declared.items():
+            out.setdefault(name, value)
+    return out
 
 
 def _select_project_sdkconfig(sdkconfig: dict | None, target_chip: str | None) -> dict[str, str]:
@@ -992,18 +1234,31 @@ def main(argv: list[str] | None = None) -> int:
             )
         raise RuntimeError(f'Unknown target or missing port directory: {port_dir}')
 
-    if target.lower() == 'esp32' and cfg.esp32_idf_component_dependencies:
-        if not isinstance(cfg.esp32_idf_component_dependencies, dict):
-            raise RuntimeError('esp32.idf_component.dependencies must be a JSON object mapping component -> version')
-        changed = _ensure_esp32_idf_component_dependencies(port_dir, cfg.esp32_idf_component_dependencies)
-        if changed:
-            print('INFO: Updated ports/esp32/main/idf_component.yml with extra dependencies from config.')
+    if target.lower() == 'esp32':
+        dep_map: dict[str, object] = {}
+        if cfg.esp32_idf_component_dependencies:
+            if not isinstance(cfg.esp32_idf_component_dependencies, dict):
+                raise RuntimeError('esp32.idf_component.dependencies must be a JSON object mapping component -> version')
+            dep_map.update(cfg.esp32_idf_component_dependencies)
+        # Modules may declare what they need themselves (sdkconfig.require.json);
+        # an explicit entry in the project config wins over module declarations.
+        for name, value in _collect_module_idf_component_deps(exmods_resolved).items():
+            dep_map.setdefault(name, value)
+        if _ensure_esp32_idf_component_dependencies(port_dir, dep_map):
+            names = ', '.join(sorted(dep_map)) or '(none)'
+            print(f'INFO: Synced ports/esp32/main/idf_component.yml dependencies ({names}).')
 
-    if target.lower() == 'esp32' and cfg.esp32_idf_components_extra:
-        if not isinstance(cfg.esp32_idf_components_extra, list):
-            raise RuntimeError('esp32.idf_components_extra must be a JSON array of IDF component names')
-        if _ensure_extra_idf_components(port_dir, cfg.esp32_idf_components_extra):
-            print('INFO: Added extra IDF components to ports/esp32/esp32_common.cmake from config.')
+    if target.lower() == 'esp32':
+        extra_components: list[str] = []
+        if cfg.esp32_idf_components_extra is not None:
+            if not isinstance(cfg.esp32_idf_components_extra, list):
+                raise RuntimeError('esp32.idf_components_extra must be a JSON array of IDF component names')
+            extra_components.extend(cfg.esp32_idf_components_extra)
+        # Modules may declare what they must have themselves (sdkconfig.require.json).
+        extra_components.extend(_collect_module_idf_components(exmods_resolved))
+        if extra_components and _ensure_extra_idf_components(port_dir, extra_components):
+            names = ', '.join(dict.fromkeys(n for n in extra_components if isinstance(n, str)))
+            print(f'INFO: Added extra IDF components to ports/esp32/esp32_common.cmake ({names}).')
 
     if not (args.no_doctor or (cfg.no_doctor is True)):
         rc = doctor(target, install=bool(args.install))
