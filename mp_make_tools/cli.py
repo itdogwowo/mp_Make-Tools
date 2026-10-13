@@ -160,6 +160,83 @@ def _ensure_esp32_idf_component_dependencies(port_dir: str, deps: dict[str, str]
         f.write('\n'.join(new_lines) + '\n')
     return True
 
+def _ensure_extra_idf_components(port_dir: str, components: list[str] | None) -> bool:
+    """List extra IDF components in IDF_COMPONENTS (ports/esp32/esp32_common.cmake).
+
+    A user C module may depend on an IDF component that nothing else pulls into
+    the build. Example: mp_lcd_bus wraps the LCD/DSI drivers, and IDF 5 pulled
+    esp_lcd in implicitly through the legacy ``driver`` meta-component -- IDF v6
+    turned that into an empty shim, so esp_lcd has to be listed explicitly.
+
+    That list is consumed by idf_component_register() in esp32_common.cmake and
+    must be populated during the CMAKE_BUILD_EARLY_EXPANSION component scan, so a
+    usermod's own cmake cannot do it (usermod cmake files are skipped in that
+    pass). Inject it here instead. This file lives in the managed MicroPython
+    checkout, which is hard-reset on every run, so the block is re-applied after
+    each checkout (and removed again once the config stops asking for it).
+    """
+    path = os.path.join(port_dir, 'esp32_common.cmake')
+    if not os.path.isfile(path):
+        return False
+
+    with open(path, 'r', encoding='utf-8') as f:
+        text = f.read()
+
+    newline = '\r\n' if '\r\n' in text else '\n'
+    lines = text.replace('\r\n', '\n').split('\n')
+
+    begin = '# >>> mp_make_tools: esp32.idf_components_extra'
+    end = '# <<< mp_make_tools: esp32.idf_components_extra'
+
+    # Drop a previously injected block first, so the checks below see the
+    # original file and repeated runs stay idempotent.
+    cleaned: list[str] = []
+    skipping = False
+    for line in lines:
+        stripped = line.strip()
+        if stripped == begin:
+            skipping = True
+            continue
+        if stripped == end:
+            skipping = False
+            continue
+        if not skipping:
+            cleaned.append(line)
+    lines = cleaned
+
+    wanted: list[str] = []
+    for name in components or []:
+        if isinstance(name, str) and name.strip() and name.strip() not in wanted:
+            wanted.append(name.strip())
+
+    # Skip anything the port (or the board) already lists itself.
+    joined = '\n'.join(lines)
+    wanted = [n for n in wanted if not re.search(r'^\s*' + re.escape(n) + r'\s*$', joined, re.M)]
+
+    if wanted:
+        insert_at = None
+        for i, line in enumerate(lines):
+            if 'idf_component_register(' in line:
+                insert_at = i
+                break
+        if insert_at is None:
+            print('WARN: idf_component_register() not found in esp32_common.cmake; '
+                  'esp32.idf_components_extra was not applied.')
+            return False
+        block = [begin, 'list(APPEND IDF_COMPONENTS']
+        block.extend(f'    {n}' for n in wanted)
+        block.append(')')
+        block.append(end)
+        lines[insert_at:insert_at] = block
+
+    new_text = newline.join(lines)
+    if new_text == text:
+        return False
+
+    with open(path, 'w', encoding='utf-8', newline='') as f:
+        f.write(new_text)
+    return True
+
 def _collect_module_sdkconfig(module_paths: list[str], target_chip: str | None) -> dict[str, str]:
     """Collect sdkconfig requirements from user C modules' sdkconfig.require.json.
 
@@ -921,6 +998,12 @@ def main(argv: list[str] | None = None) -> int:
         changed = _ensure_esp32_idf_component_dependencies(port_dir, cfg.esp32_idf_component_dependencies)
         if changed:
             print('INFO: Updated ports/esp32/main/idf_component.yml with extra dependencies from config.')
+
+    if target.lower() == 'esp32' and cfg.esp32_idf_components_extra:
+        if not isinstance(cfg.esp32_idf_components_extra, list):
+            raise RuntimeError('esp32.idf_components_extra must be a JSON array of IDF component names')
+        if _ensure_extra_idf_components(port_dir, cfg.esp32_idf_components_extra):
+            print('INFO: Added extra IDF components to ports/esp32/esp32_common.cmake from config.')
 
     if not (args.no_doctor or (cfg.no_doctor is True)):
         rc = doctor(target, install=bool(args.install))

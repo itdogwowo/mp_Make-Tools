@@ -234,6 +234,27 @@ ESP32 port 的一些選項通常是用 `make` 變數傳入（例如 `BOARD`、`B
 
 - `esp32.idf_component.dependencies`：例如 `{ "espressif/esp_new_jpeg": "^1.0.0" }`
 
+### esp32.idf_components_extra（IDF 內建 component）
+
+若你的 user C module 需要的是 **ESP-IDF 內建** component，但 IDF 沒有把它拉進建置，就設這個：
+
+- `esp32.idf_components_extra`：例如 `["esp_lcd"]`
+
+典型例子是 `esp_lcd`：IDF 5 靠 legacy `driver` meta-component 間接帶入，IDF v6 把 `driver` 變成空殼後就沒有人拉它了，於是 `mp_lcd_bus` 這類 usermod 會編不過。
+
+工具會在**每次 checkout 之後**把這些名稱補進 `ports/esp32/esp32_common.cmake` 的 `IDF_COMPONENTS`（位置在 `idf_component_register()` 之前，包在 `# >>> mp_make_tools: esp32.idf_components_extra` 標記區塊內，可重複執行、不會重複插入；清單改動時舊區塊會被換掉）。
+
+**為什麼不能寫在 usermod 的 cmake**：`IDF_COMPONENTS` 必須在 `CMAKE_BUILD_EARLY_EXPANSION`（component 掃描）階段就填好，而 usermod 的 cmake 在那個階段不會被執行；反過來，若只用 `idf_component_get_property()` 去讀一個不在建置內的 component，IDF 會直接以
+`BUG: component_requirements.py: cannot find original component for source component <name>` 失敗。
+
+> ⚠️ `esp32_common.cmake` 位於受管理的 MicroPython checkout 內，**每次執行都會被 `reset --hard`**。
+> 所以請用這個設定（工具每次重新套用），手改一定活不過下一次執行。
+
+### git 遠端 URL 同步
+
+`git_config.json` 的 `url` 只在**第一次 clone** 時使用；既有 checkout 會保留當初的 `origin`。
+現在每次同步前都會比對設定與實際 `origin`（`mp_make_tools/fetch.py` 的 `_sync_remote_url()`），不同就自動 `remote set-url`，所以「改了 `url` 卻一直在抓舊 repo」不會再發生（`.git` 後綴／大小寫／尾斜線視為相同，不會每次無謂改寫）。
+
 ## 自動下載（fetch）
 
 如果你的 firmware repo 還沒有把 source 拉下來，工具可以幫你：

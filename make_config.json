@@ -5,7 +5,13 @@
     "  那一組是 IDF v6.1 + cumin777 MicroPython 1.29/1.30-dev + 自家 fork 的 lv_binding（含 PR #411）。",
     "exmod：工具只讀 list（mp_make_tools/config.py:127）；_list 是底線鍵，程式碼從不讀它，",
     "  純粹是『想用但先關掉』的停放區。要暫時關閉某模組：把該行從 list 搬到 _list。",
-    "  目前 list 裡五個模組全部啟用。",
+    "  目前 list 裡四個模組啟用；mp_hub75 停放中 —— 它依賴的 esphome/esp-hub75 0.3.6 在 IDF v6.1 過不了",
+    "  -Werror=missing-field-initializers（上游 main 已修、registry 尚未發版），所以 dependencies 也一起移除。",
+    "  要恢復：兩邊一起加回來（exmod.list + esp32.idf_component.dependencies），或改用已修好的版本。",
+    "esp32.idf_components_extra：讓工具把 IDF 內建 component 補進 ports/esp32/esp32_common.cmake 的",
+    "  IDF_COMPONENTS。mp_lcd_bus 需要 esp_lcd：IDF 5 由 legacy driver meta-component 間接帶入，",
+    "  IDF v6 的 driver 變成空殼後就沒人拉它（會以 component_requirements.py 的 BUG 失敗）。",
+    "  那個檔案在受管理的 checkout 內、每次 reset --hard，所以只能靠這個設定，手改活不過下一次執行。",
     "flash_mb 刻意固定 4 —— 安全 floor（宣告大於實際晶片會 Probe failed 開不了機）。",
     "esp32.sdkconfig 只認晶片名，沒有 BOARD_VARIANT 這個軸，所以 esp32s3 那塊同時管 s3 與 s3psram。",
     "  區塊裡不要放 _comment 之類的鍵，會被原樣寫進 sdkconfig 片段。"
@@ -27,10 +33,10 @@
   "exmod": {
     "root": "ext_mod",
     "_list": [
+      "/mp_hub75/micropython.cmake"
     ],
     "list": [
       "/mp_jpeg/micropython.cmake",
-      "/mp_hub75/micropython.cmake",
       "/mp_heap_caps/micropython.cmake",
       "/mp_lcd_bus/micropython.cmake",
       "/lv_binding_micropython/micropython.cmake"
@@ -42,6 +48,9 @@
       "flash_mb": 4,
       "app_margin_kb": 4
     },
+    "idf_components_extra": [
+      "esp_lcd"
+    ],
     "sdkconfig": {
       "esp32s3": {
         "CONFIG_ESP_DEFAULT_CPU_FREQ_MHZ_40": "",
@@ -58,8 +67,7 @@
     },
     "idf_component": {
       "dependencies": {
-        "espressif/esp_new_jpeg": "^1.0.0",
-        "esphome/esp-hub75": "^0.3.6"
+        "espressif/esp_new_jpeg": "^1.0.0"
       }
     },
     "make": {
