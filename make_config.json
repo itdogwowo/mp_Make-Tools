@@ -26,6 +26,9 @@
     "  下面保留 esp_new_jpeg 是刻意的保險；要 100% 純淨的 base 就把那行也拿掉。",
     "",
     "flash_mb 刻意固定 4 —— 安全 floor（宣告大於實際晶片會 Probe failed 開不了機）。",
+    "  這是 S3 用的；P4 請用 ports/p4-c6-wifi/make_config.json（那裡不寫 flash_mb，自動取 16MB）。",
+    "P4 的晶片 revision 放在 ports/p4-c6-wifi/make_config.json 的 esp32.sdkconfig（esp32p4 / _esp32p4 二選一，搬底線切換）。",
+    "  本檔（S3 用）不含 esp32p4 區塊 —— 用 root config 編 P4 會落回板子預設（只支援 rev3+），所以 P4 請用那個 preset。",
     "esp32.sdkconfig 只認晶片名，沒有 BOARD_VARIANT 這個軸，所以 esp32s3 那塊同時管 s3 與 s3psram。",
     "  區塊裡不要放 _comment 之類的鍵，會被原樣寫進 sdkconfig 片段。"
   ],
@@ -68,11 +71,6 @@
         "CONFIG_ESP_DEFAULT_CPU_FREQ_MHZ_160": "",
         "CONFIG_ESP_DEFAULT_CPU_FREQ_MHZ_240": "y",
         "CONFIG_ESP_DEFAULT_CPU_FREQ_MHZ": "240"
-      },
-      "esp32p4": {
-        "CONFIG_ESP32P4_REV_MIN_300": "n",
-        "CONFIG_ESP32P4_REV_MIN_0": "y",
-        "CONFIG_ESP32P4_SELECTS_REV_LESS_V3": "y"
       }
     },
     "idf_component": {
@@ -81,7 +79,7 @@
       }
     },
     "make": {
-      "_comment": "C5_WIFI,SPIRAM_OCT",
+      "_comment": "BOARD_VARIANT：SPIRAM_OCT（N8R8/N16R8 等 octal PSRAM 模組）。要編一般 quad／無 PSRAM 模組：把 BOARD_VARIANT 那行刪掉或設成空字串（空值與 _ 開頭的鍵，工具都會略過）。",
       "vars": {
         "BOARD": "ESP32_GENERIC_S3",
         "BOARD_VARIANT": "SPIRAM_OCT"

@@ -90,6 +90,11 @@ def _apply_make_vars(passthrough: list[str], vars_from_cfg: dict[str, str] | Non
         vv = v.strip()
         if not kk or not vv:
             continue
+        # Keys starting with '_' are parked: kept in the config for reference
+        # (eg an alternative BOARD_VARIANT) but never passed to make. Switch
+        # between alternatives by moving the underscore to the other key.
+        if kk.startswith('_'):
+            continue
         if kk in existing:
             continue
         additions.append(f'{kk}={vv}')
@@ -363,7 +368,8 @@ def _collect_module_sdkconfig(module_paths: list[str], target_chip: str | None) 
         block = data.get(target_chip)
         if isinstance(block, dict):
             for k, v in block.items():
-                if isinstance(k, str) and isinstance(v, str):
+                # '_'-prefixed keys are parked (comments / alternatives).
+                if isinstance(k, str) and isinstance(v, str) and not k.startswith('_'):
                     result[k] = v
     return result
 
@@ -517,15 +523,27 @@ def _select_project_sdkconfig(sdkconfig: dict | None, target_chip: str | None) -
     - nested dict keyed by chip names (e.g. ``{"esp32p4": {...}}``): only the
       block matching the board's chip is applied, so e.g. P4-specific settings
       never leak into S3 builds.
+
+    Keys starting with ``_`` are parked: kept in the config for reference
+    (comments, or an alternative value) but never written into the sdkconfig
+    fragment. Switch between alternatives by moving the underscore.
     """
     if not sdkconfig:
         return {}
+
+    def _live(items) -> dict[str, str]:
+        return {
+            k: v
+            for k, v in items
+            if isinstance(k, str) and isinstance(v, str) and not k.startswith('_')
+        }
+
     if all(isinstance(v, str) for v in sdkconfig.values()):
-        return {k: v for k, v in sdkconfig.items() if isinstance(k, str) and isinstance(v, str)}
+        return _live(sdkconfig.items())
     if target_chip:
         block = sdkconfig.get(target_chip)
         if isinstance(block, dict):
-            return {k: v for k, v in block.items() if isinstance(k, str) and isinstance(v, str)}
+            return _live(block.items())
     return {}
 
 

@@ -1,0 +1,88 @@
+{
+  "_notes": [
+    "ESP32-P4 + 外掛 ESP32-C6（Wi-Fi/BLE）。本機這顆 P4 是 revision v1.0（pre-rev3）。",
+    "",
+    "★ 晶片 revision 直接在 esp32.sdkconfig 裡二選一（切換只要搬底線）：",
+    "    esp32p4   = rev0/1（pre-rev3）← 目前生效，對應本機的 v1.0",
+    "    _esp32p4  = rev3+（官方預設）",
+    "  板上 sdkconfig.p4 預設是 CONFIG_ESP32P4_REV_MIN_300=y（只支援 rev3+），rev1.0 的晶片會拒絕開機",
+    "  （esptool: 'requires chip revision in range [v3.1 - v3.99]' / Image requires chip rev >= v3.0）。",
+    "  pre-rev3 那組（REV_MIN_0=y + SELECTS_REV_LESS_V3=y）就是官方 boards/sdkconfig.p4_pre_rev3 的內容。",
+    "  為什麼可以放這裡：工具寫的 sdkconfig 片段會 append 在 SDKCONFIG_DEFAULTS 最後 → 一定贏過板子與 variant。",
+    "  注意這是「晶片軸」：同一個 esp32p4 區塊會套用到所有 P4 build，所以換板子時記得改這一組（搬底線）。",
+    "",
+    "  （另一條路：BOARD_VARIANT 用官方 variant PRE_REV3_C6_WIFI 也能達到同樣效果，兩者等價；",
+    "    config 的 REV 鍵因為排最後，會覆蓋 variant 的設定。）",
+    "",
+    "BOARD_VARIANT：C6_WIFI = 外掛 ESP32-C6 的 Wi-Fi/BLE。",
+    "  其他官方組合：不設定（純 P4）、C5_WIFI（外掛 C5）、PRE_REV3 / PRE_REV3_C5_WIFI / PRE_REV3_C6_WIFI。",
+    "",
+    "為什麼不寫 esp32.partition.flash_mb：",
+    "  P4 板子自己在 sdkconfig.p4 宣告 CONFIG_ESPTOOLPY_FLASHSIZE_16MB=y（覆蓋 base 的 4MB）。",
+    "  不指定 → 工具沿 SDKCONFIG_DEFAULTS 鏈自動偵測到 16MB。",
+    "  若沿用 root config 的 flash_mb: 4，分割表會被壓成 4MB：factory 只剩 1.79MB，而這個 build 的",
+    "  app 已經 1.787MB（0% 剩餘）→ 任何模組加回來都會爆（app_check_size）。",
+    "",
+    "exmod：BASE 階段全部註銷（停放在 _list）。要開啟某模組：把該行搬回 list。",
+    "  加回順序建議與 root config 的 _notes 相同（heap_caps → jpeg → lv_binding → hub75 → lcd_bus）。",
+    "  注意 mp_lcd_bus 的 DSI/RGB 路徑是 P4 專屬，port 完後這裡會是主要驗證平台。",
+    "",
+    "用法：python3 make.py --config ports/p4-c6-wifi/make_config.json",
+    "  （P4 需要對應工具鏈：python3 make.py --config ... --idf-install）"
+  ],
+  "git_manage": "git_config.json",
+  "esp_idf": {
+    "chips": "esp32p4",
+    "no_export": false
+  },
+  "build": {
+    "target": "esp32p4",
+    "dir": "build",
+    "jobs": null,
+    "user_c_modules": null,
+    "strict": false,
+    "no_doctor": false,
+    "no_clean": false
+  },
+  "exmod": {
+    "root": "ext_mod",
+    "_list": [
+      "/mp_heap_caps/micropython.cmake",
+      "/mp_jpeg/micropython.cmake",
+      "/lv_binding_micropython/micropython.cmake",
+      "/mp_hub75/micropython.cmake",
+      "/mp_lcd_bus/micropython.cmake"
+    ],
+    "list": [
+    ]
+  },
+  "esp32": {
+    "partition": {
+      "auto": true,
+      "app_margin_kb": 4
+    },
+    "sdkconfig": {
+      "esp32p4": {
+        "_comment": "rev0/1 = pre-rev3（本機這顆 v1.0）。切換到 rev3+：把底線搬到 _esp32p4",
+        "CONFIG_ESP32P4_REV_MIN_300": "n",
+        "CONFIG_ESP32P4_REV_MIN_0": "y",
+        "CONFIG_ESP32P4_SELECTS_REV_LESS_V3": "y"
+      },
+      "_esp32p4": {
+        "_comment": "rev3+（官方預設，只支援 3.0 以上）",
+        "CONFIG_ESP32P4_REV_MIN_300": "y"
+      }
+    },
+    "make": {
+      "_comment": "BOARD_VARIANT：C6_WIFI（外掛 C6）。另一條路是把這裡換成 PRE_REV3_C6_WIFI（官方 variant 版的 pre-rev3）",
+      "vars": {
+        "BOARD": "ESP32_GENERIC_P4",
+        "BOARD_VARIANT": "C6_WIFI",
+        "_BOARD_VARIANT": "PRE_REV3_C6_WIFI"
+      }
+    }
+  },
+  "output": {
+    "name": "p4-c6-wifi"
+  }
+}

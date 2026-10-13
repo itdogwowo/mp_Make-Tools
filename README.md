@@ -227,6 +227,35 @@ ESP32 port 的一些選項通常是用 `make` 變數傳入（例如 `BOARD`、`B
 - 純 ESP32-P4（不使用協處理器）：不設定 `BOARD_VARIANT`
 - 外掛 ESP32-C5（Wi-Fi/BLE）：`BOARD_VARIANT=C5_WIFI`
 - 外掛 ESP32-C6（Wi-Fi/BLE）：`BOARD_VARIANT=C6_WIFI`
+- **晶片是 rev0/1（pre-rev3）時**：前面加 `PRE_REV3_`，例如 `PRE_REV3_C6_WIFI`
+  （板上預設是 `CONFIG_ESP32P4_REV_MIN_300=y` = 只支援 rev3+，舊晶片會拒絕開機；
+  官方 variant 會 append `boards/sdkconfig.p4_pre_rev3`。**不要**改用手寫 sdkconfig REV 鍵 ——
+  `esp32.sdkconfig` 只有晶片軸、沒有 variant 軸，手寫會把所有 P4 build 都拉回 pre-rev3。）
+
+### `_` 前綴 = 停放區（保留但不生效）
+
+設定檔裡任何**以 `_` 開頭的鍵**都是「停放」：留在檔案裡當參考或替代值，但工具不會用它。
+切換替代方案只要**把底線搬到另一個鍵**，不必改值。適用範圍：
+
+| 位置 | 停放行為 |
+|---|---|
+| `exmod._list` | 工具只讀 `exmod.list`；`_list` 完全不讀（關閉模組用） |
+| `esp32.make.vars` | `_` 開頭的鍵不會傳給 `make`（例：`_BOARD_VARIANT` 放另一個 variant） |
+| `esp32.sdkconfig`（含晶片區塊內） | `_` 開頭的鍵不會寫進 sdkconfig 片段（所以 `_comment` 放在區塊裡也安全） |
+| 模組 `sdkconfig.require.json` 的晶片區塊 | 同上，`_` 開頭不生效 |
+| 頂層 `_notes`、`_comment` | 純說明，工具從不讀 |
+
+範例（P4 preset 的 variant 二選一，切換只搬底線）：
+
+```json
+"vars": {
+  "BOARD": "ESP32_GENERIC_P4",
+  "BOARD_VARIANT": "PRE_REV3_C6_WIFI",
+  "_BOARD_VARIANT": "C6_WIFI"
+}
+```
+
+> 空字串值（`""`）也會被略過 —— 那正是「取消某個選項」的寫法（例如 CPU 頻率選項要清空時）。
 
 ### 模組自己的請求檔：idf_component.yml
 
